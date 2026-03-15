@@ -1,5 +1,6 @@
 """Simple in-memory concept graph representation."""
 
+from collections import defaultdict
 from dataclasses import dataclass
 
 
@@ -21,3 +22,12 @@ class ConceptGraph:
         """Return the number of nodes."""
 
         return len(self.node_ids)
+
+    def weighted_degree_map(self) -> dict[str, int]:
+        """Return weighted degree scores for graph nodes."""
+
+        scores: dict[str, int] = defaultdict(int)
+        for (left, right), weight in self.edge_weights.items():
+            scores[left] += weight
+            scores[right] += weight
+        return {node_id: scores[node_id] for node_id in self.node_ids}

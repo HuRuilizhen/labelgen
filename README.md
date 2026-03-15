@@ -34,6 +34,9 @@ for assignment in result.paragraph_labels:
 
 ## Notes
 
+- `fit` learns concept communities from a corpus.
+- `transform` applies previously learned communities to new paragraphs.
+- `fit_transform` learns and labels the same input in one pass.
 - The base package works with deterministic fallback implementations.
 - Install `labelgen[graph]` to enable Leiden community detection.
 - Install `labelgen[nlp]` to enable spaCy-based concept extraction.

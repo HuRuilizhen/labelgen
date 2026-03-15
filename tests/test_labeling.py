@@ -37,6 +37,42 @@ def test_assigner_returns_labels_for_all_paragraphs() -> None:
     assert result[1].evidence_concept_ids == []
 
 
+def test_assigner_preserves_input_paragraph_order() -> None:
+    paragraphs = [
+        Paragraph(id="z-last", text="Alpha"),
+        Paragraph(id="a-first", text="Beta"),
+    ]
+    communities = [
+        Community(
+            id="community-0",
+            concept_ids=["c1", "c2"],
+            display_name="alpha / beta",
+            representative_concepts=["alpha", "beta"],
+            size=2,
+        )
+    ]
+    mentions = [
+        ConceptMention(
+            paragraph_id="z-last",
+            concept_id="c1",
+            surface="Alpha",
+            normalized="alpha",
+            kind="noun_phrase",
+        ),
+        ConceptMention(
+            paragraph_id="a-first",
+            concept_id="c2",
+            surface="Beta",
+            normalized="beta",
+            kind="noun_phrase",
+        ),
+    ]
+
+    result = assign_paragraph_labels(paragraphs, mentions, communities, LabelAssignmentConfig())
+
+    assert [item.paragraph_id for item in result] == ["z-last", "a-first"]
+
+
 def test_assigner_deduplicates_repeated_concepts_per_label() -> None:
     paragraphs = [Paragraph(id="p1", text="Alpha alpha beta")]
     communities = [
@@ -76,3 +112,31 @@ def test_assigner_deduplicates_repeated_concepts_per_label() -> None:
 
     assert result[0].label_scores == {"community-0": 2.0}
     assert result[0].evidence_concept_ids == ["c1", "c2"]
+
+
+def test_assigner_respects_min_label_support() -> None:
+    paragraphs = [Paragraph(id="p1", text="Alpha beta")]
+    communities = [
+        Community(
+            id="community-0",
+            concept_ids=["c1", "c2"],
+            display_name="alpha / beta",
+            representative_concepts=["alpha", "beta"],
+            size=2,
+        )
+    ]
+    mentions = [
+        ConceptMention(
+            paragraph_id="p1",
+            concept_id="c1",
+            surface="Alpha",
+            normalized="alpha",
+            kind="noun_phrase",
+        )
+    ]
+    config = LabelAssignmentConfig()
+    config.min_label_support = 2.0
+
+    result = assign_paragraph_labels(paragraphs, mentions, communities, config)
+
+    assert result[0].label_ids == []

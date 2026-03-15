@@ -13,6 +13,7 @@ from labelgen.config import (
     GraphConfig,
     LabelAssignmentConfig,
     LabelGeneratorConfig,
+    VerbalizationConfig,
 )
 from labelgen.types import (
     Community,
@@ -64,12 +65,14 @@ def config_from_dict(data: dict[str, Any]) -> LabelGeneratorConfig:
     label_assignment = LabelAssignmentConfig(
         **_as_string_key_dict(data.get("label_assignment"))
     )
+    verbalization = VerbalizationConfig(**_as_string_key_dict(data.get("verbalization")))
     return LabelGeneratorConfig(
         random_seed=_as_int(data.get("random_seed"), default=42),
         extraction=extraction,
         graph=graph,
         community_detection=community_detection,
         label_assignment=label_assignment,
+        verbalization=verbalization,
     )
 
 

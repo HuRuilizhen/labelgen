@@ -31,7 +31,7 @@ def assign_paragraph_labels(
         paragraph_evidence_by_label[mention.paragraph_id][community_id].add(mention.concept_id)
 
     labels: list[ParagraphLabels] = []
-    for paragraph in sorted(paragraphs, key=lambda item: item.id):
+    for paragraph in paragraphs:
         evidence_by_label = paragraph_evidence_by_label.get(paragraph.id, {})
         ranked = sorted(
             (
@@ -41,10 +41,11 @@ def assign_paragraph_labels(
             key=lambda item: (-item[1], item[0]),
         )
         ranked = ranked[: config.max_labels_per_paragraph]
+        minimum_support = max(float(config.min_evidence_concepts), config.min_label_support)
         label_ids = [
             community_id
             for community_id, score in ranked
-            if score >= config.min_evidence_concepts
+            if score >= minimum_support
         ]
         selected_evidence = sorted(
             {
