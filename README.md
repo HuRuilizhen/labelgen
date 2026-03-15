@@ -1,18 +1,18 @@
-# labelgen
+# paralabelgen
 
-`labelgen` is a Python library for generating discrete multi-label annotations for text paragraphs.
+`paralabelgen` is a Python library for generating discrete multi-label annotations for text paragraphs.
 
 ## Install
 
 ```bash
-pip install labelgen
+pip install paralabelgen
 ```
 
 Optional extras:
 
 ```bash
-pip install "labelgen[graph]"
-pip install "labelgen[nlp]"
+pip install "paralabelgen[graph]"
+pip install "paralabelgen[nlp]"
 ```
 
 ## Example
@@ -39,14 +39,15 @@ for assignment in result.paragraph_labels:
 
 ## Notes
 
+- The distribution name is `paralabelgen`, while the Python import package is `labelgen`.
 - `fit` learns concept communities from a corpus.
 - `transform` applies previously learned communities to new paragraphs.
 - `fit_transform` learns and labels the same input in one pass.
 - The base package works with deterministic fallback implementations.
-- Without `labelgen[nlp]`, concept extraction uses regex and heuristic rules:
+- Without `paralabelgen[nlp]`, concept extraction uses regex and heuristic rules:
   capitalized spans are treated as lightweight entities, and non-stopword token spans
   are treated as candidate noun phrases.
-- Without `labelgen[graph]`, community detection falls back to deterministic connected
+- Without `paralabelgen[graph]`, community detection falls back to deterministic connected
   components over the concept co-occurrence graph instead of Leiden.
-- Install `labelgen[nlp]` to enable spaCy-based concept extraction.
-- Install `labelgen[graph]` to enable Leiden community detection.
+- Install `paralabelgen[nlp]` to enable spaCy-based concept extraction.
+- Install `paralabelgen[graph]` to enable Leiden community detection.

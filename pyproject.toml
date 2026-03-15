@@ -3,7 +3,7 @@ requires = ["hatchling>=1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "labelgen"
+name = "paralabelgen"
 version = "0.0.0"
 description = "A Python library for generating discrete paragraph labels from concept extraction, graph communities, and interpretable assignment rules."
 readme = "README.md"
