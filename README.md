@@ -28,6 +28,11 @@ paragraphs = [
 generator = LabelGenerator(LabelGeneratorConfig())
 result = generator.fit_transform(paragraphs)
 
+print("Concepts:")
+for concept in result.concepts:
+    print(concept.normalized, concept.kind, concept.document_frequency)
+
+print("Labels:")
 for assignment in result.paragraph_labels:
     print(assignment.paragraph_id, assignment.label_ids, assignment.label_scores)
 ```
@@ -38,5 +43,10 @@ for assignment in result.paragraph_labels:
 - `transform` applies previously learned communities to new paragraphs.
 - `fit_transform` learns and labels the same input in one pass.
 - The base package works with deterministic fallback implementations.
-- Install `labelgen[graph]` to enable Leiden community detection.
+- Without `labelgen[nlp]`, concept extraction uses regex and heuristic rules:
+  capitalized spans are treated as lightweight entities, and non-stopword token spans
+  are treated as candidate noun phrases.
+- Without `labelgen[graph]`, community detection falls back to deterministic connected
+  components over the concept co-occurrence graph instead of Leiden.
 - Install `labelgen[nlp]` to enable spaCy-based concept extraction.
+- Install `labelgen[graph]` to enable Leiden community detection.
