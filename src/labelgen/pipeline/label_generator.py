@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any, cast
 
 from labelgen.community.leiden_detector import LeidenCommunityDetector
 from labelgen.config import LabelGeneratorConfig
@@ -13,7 +14,7 @@ from labelgen.extraction.normalization import normalize_surface
 from labelgen.extraction.spacy_extractor import SpacyConceptExtractor
 from labelgen.graph.builder import build_concept_graph
 from labelgen.graph.concept_graph import ConceptGraph
-from labelgen.io.serialize import dump_config, load_config
+from labelgen.io.serialize import dump_json_object, load_json_object
 from labelgen.labeling.assigner import assign_paragraph_labels
 from labelgen.labeling.verbalizer import verbalize_communities
 from labelgen.preprocessing.paragraphs import normalize_paragraphs
@@ -52,7 +53,12 @@ class LabelGenerator:
     def fit(self, paragraphs: list[str] | list[Paragraph]) -> LabelGenerator:
         """Learn concept communities from the provided paragraphs."""
 
-        artifacts = self._prepare_artifacts(paragraphs)
+        artifacts = self._extract_artifacts(paragraphs)
+        retained_concept_ids = self._select_retained_concept_ids(
+            artifacts.concepts,
+            len(artifacts.paragraphs),
+        )
+        artifacts = self._retain_concepts(artifacts, retained_concept_ids)
         self._fitted_concepts = artifacts.concepts
         self._fitted_communities = verbalize_communities(
             self._detector.detect(artifacts.graph),
@@ -69,25 +75,26 @@ class LabelGenerator:
         if not self._is_fitted:
             raise RuntimeError("LabelGenerator.transform() requires a fitted generator.")
 
-        artifacts = self._prepare_artifacts(paragraphs)
+        artifacts = self._extract_artifacts(paragraphs)
         known_concept_ids = {concept.id for concept in self._fitted_concepts}
-        filtered_mentions = [
-            mention for mention in artifacts.mentions if mention.concept_id in known_concept_ids
-        ]
-        concepts = [concept for concept in artifacts.concepts if concept.id in known_concept_ids]
-        graph = build_concept_graph(filtered_mentions, self.config.graph)
+        artifacts = self._retain_concepts(artifacts, known_concept_ids)
         return self._build_result(
             paragraphs=artifacts.paragraphs,
-            concepts=concepts,
-            mentions=filtered_mentions,
+            concepts=artifacts.concepts,
+            mentions=artifacts.mentions,
             communities=self._fitted_communities,
-            graph=graph,
+            graph=artifacts.graph,
         )
 
     def fit_transform(self, paragraphs: list[str] | list[Paragraph]) -> LabelGenerationResult:
         """Learn communities and label the same input paragraphs."""
 
-        artifacts = self._prepare_artifacts(paragraphs)
+        artifacts = self._extract_artifacts(paragraphs)
+        retained_concept_ids = self._select_retained_concept_ids(
+            artifacts.concepts,
+            len(artifacts.paragraphs),
+        )
+        artifacts = self._retain_concepts(artifacts, retained_concept_ids)
         communities = verbalize_communities(
             self._detector.detect(artifacts.graph),
             artifacts.concepts,
@@ -113,40 +120,50 @@ class LabelGenerator:
         )
 
     def save(self, path: str | Path) -> None:
-        """Persist generator configuration to disk."""
+        """Persist generator configuration and fitted state to disk."""
 
-        dump_config(self.config, path)
+        dump_json_object(self._to_dict(), path)
 
     @classmethod
     def load(cls, path: str | Path) -> LabelGenerator:
-        """Load a generator from serialized configuration."""
+        """Load a generator from serialized configuration and fitted state."""
 
-        return cls(load_config(path))
+        data = load_json_object(path)
+        return cls._from_dict(data)
 
-    def _prepare_artifacts(
+    def _extract_artifacts(
         self,
         paragraphs: list[str] | list[Paragraph],
     ) -> _PipelineArtifacts:
-        """Prepare normalized pipeline artifacts from input paragraphs."""
+        """Extract normalized pipeline artifacts from input paragraphs."""
 
         normalized_paragraphs = normalize_paragraphs(paragraphs)
         extracted_mentions = self._extractor.extract(normalized_paragraphs)
         filtered_mentions = filter_mentions(extracted_mentions, self.config.extraction)
         concepts = self._build_concepts(filtered_mentions)
-        retained_concept_ids = self._select_retained_concept_ids(
-            concepts,
-            len(normalized_paragraphs),
-        )
-        filtered_mentions = [
-            mention for mention in filtered_mentions if mention.concept_id in retained_concept_ids
-        ]
-        concepts = [concept for concept in concepts if concept.id in retained_concept_ids]
-        graph = build_concept_graph(filtered_mentions, self.config.graph)
         return _PipelineArtifacts(
             paragraphs=normalized_paragraphs,
             mentions=filtered_mentions,
             concepts=concepts,
-            graph=graph,
+            graph=build_concept_graph(filtered_mentions, self.config.graph),
+        )
+
+    def _retain_concepts(
+        self,
+        artifacts: _PipelineArtifacts,
+        retained_concept_ids: set[str],
+    ) -> _PipelineArtifacts:
+        """Retain only the requested concepts and rebuild dependent artifacts."""
+
+        mentions = [
+            mention for mention in artifacts.mentions if mention.concept_id in retained_concept_ids
+        ]
+        concepts = [concept for concept in artifacts.concepts if concept.id in retained_concept_ids]
+        return _PipelineArtifacts(
+            paragraphs=artifacts.paragraphs,
+            mentions=mentions,
+            concepts=concepts,
+            graph=build_concept_graph(mentions, self.config.graph),
         )
 
     def _build_result(
@@ -188,6 +205,52 @@ class LabelGenerator:
                 "is_fitted": self._is_fitted,
             },
         )
+
+    def _to_dict(self) -> dict[str, Any]:
+        """Serialize generator configuration and fitted state."""
+
+        return {
+            "config": asdict(self.config),
+            "is_fitted": self._is_fitted,
+            "fitted_concepts": [asdict(concept) for concept in self._fitted_concepts],
+            "fitted_communities": [asdict(community) for community in self._fitted_communities],
+        }
+
+    @classmethod
+    def _from_dict(cls, data: dict[str, Any]) -> LabelGenerator:
+        """Reconstruct a generator from serialized data."""
+
+        config_data = data.get("config")
+        if not isinstance(config_data, dict):
+            raise TypeError("Serialized generator must contain a config object.")
+
+        from labelgen.io.serialize import (
+            as_json_object,
+            as_json_object_list,
+            config_from_dict,
+        )
+
+        generator = cls(config_from_dict(as_json_object(cast(object, config_data))))
+        is_fitted = data.get("is_fitted", False)
+        if not isinstance(is_fitted, bool):
+            raise TypeError("Serialized generator is_fitted must be a boolean.")
+        generator._is_fitted = is_fitted
+
+        fitted_concepts = as_json_object_list(data.get("fitted_concepts", []))
+        generator._fitted_concepts = [
+            Concept(**item) for item in fitted_concepts
+        ]
+
+        fitted_communities = as_json_object_list(data.get("fitted_communities", []))
+        generator._fitted_communities = [
+            Community(**item) for item in fitted_communities
+        ]
+
+        if generator._is_fitted and (
+            not generator._fitted_concepts or not generator._fitted_communities
+        ):
+            raise TypeError("Serialized fitted generator must include concepts and communities.")
+        return generator
 
     def _select_retained_concept_ids(
         self,

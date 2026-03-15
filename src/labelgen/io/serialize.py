@@ -116,6 +116,33 @@ def load_config(path: str | Path) -> LabelGeneratorConfig:
     return config_from_dict(_as_string_key_dict(cast(object, data)))
 
 
+def dump_json_object(data: dict[str, Any], path: str | Path) -> None:
+    """Serialize a generic JSON object to disk."""
+
+    destination = Path(path)
+    destination.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def load_json_object(path: str | Path) -> dict[str, Any]:
+    """Load a generic JSON object from disk."""
+
+    source = Path(path)
+    data = json.loads(source.read_text(encoding="utf-8"))
+    return as_json_object(cast(object, data))
+
+
+def as_json_object(value: object) -> dict[str, Any]:
+    """Normalize a generic object into a string-key JSON dictionary."""
+
+    return _as_string_key_dict(value)
+
+
+def as_json_object_list(value: object) -> list[dict[str, Any]]:
+    """Normalize a generic object into a list of JSON dictionaries."""
+
+    return _as_dict_list(value)
+
+
 def _graph_summary_from_dict(data: object) -> GraphSummary | None:
     """Reconstruct a graph summary from serialized data."""
 

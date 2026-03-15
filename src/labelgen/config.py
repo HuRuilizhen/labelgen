@@ -57,6 +57,10 @@ class LabelGeneratorConfig:
     random_seed: int = 42
     extraction: ExtractionConfig = field(default_factory=ExtractionConfig)
     graph: GraphConfig = field(default_factory=GraphConfig)
-    community_detection: CommunityDetectionConfig = field(default_factory=CommunityDetectionConfig)
-    label_assignment: LabelAssignmentConfig = field(default_factory=LabelAssignmentConfig)
+    community_detection: CommunityDetectionConfig = field(
+        default_factory=CommunityDetectionConfig
+    )
+    label_assignment: LabelAssignmentConfig = field(
+        default_factory=LabelAssignmentConfig
+    )
     verbalization: VerbalizationConfig = field(default_factory=VerbalizationConfig)

@@ -44,6 +44,25 @@ def test_transform_uses_fitted_communities() -> None:
     assert result.metadata["is_fitted"] is True
 
 
+def test_transform_does_not_reapply_training_df_threshold_to_inference_input() -> None:
+    config = LabelGeneratorConfig()
+    config.extraction.min_document_frequency = 2
+
+    generator = LabelGenerator(config)
+    generator.fit(
+        [
+            "OpenAI builds language models.",
+            "OpenAI deploys language models.",
+        ]
+    )
+
+    result = generator.transform(["OpenAI uses language models."])
+
+    assert result.mentions
+    assert result.concepts
+    assert result.paragraph_labels[0].label_ids
+
+
 def test_min_document_frequency_filters_single_paragraph_concepts() -> None:
     config = LabelGeneratorConfig()
     config.extraction.min_document_frequency = 2

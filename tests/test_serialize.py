@@ -43,3 +43,25 @@ def test_generator_save_and_load_preserve_config(tmp_path: Path) -> None:
     assert loaded.config.random_seed == 17
     assert loaded.config.extraction.min_document_frequency == 2
     assert loaded.config.label_assignment.max_labels_per_paragraph == 1
+
+
+def test_generator_save_and_load_preserve_fitted_state(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig()
+    config.extraction.min_document_frequency = 2
+
+    generator = LabelGenerator(config)
+    generator.fit(
+        [
+            "OpenAI builds language models.",
+            "OpenAI deploys language models.",
+        ]
+    )
+
+    output_path = tmp_path / "fitted-generator.json"
+    generator.save(output_path)
+    loaded = LabelGenerator.load(output_path)
+    result = loaded.transform(["OpenAI uses language models."])
+
+    assert result.mentions
+    assert result.concepts
+    assert result.paragraph_labels[0].label_ids
