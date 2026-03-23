@@ -23,6 +23,7 @@ from labelgen.graph.concept_graph import ConceptGraph
 from labelgen.io.serialize import dump_json_object, load_json_object
 from labelgen.labeling.assigner import assign_paragraph_labels
 from labelgen.labeling.verbalizer import verbalize_communities
+from labelgen.preprocessing.cleanup import clean_paragraphs
 from labelgen.preprocessing.paragraphs import normalize_paragraphs
 from labelgen.types import (
     Community,
@@ -176,11 +177,12 @@ class LabelGenerator:
         """Extract normalized pipeline artifacts from input paragraphs."""
 
         normalized_paragraphs = normalize_paragraphs(paragraphs)
-        extracted_mentions = self._extractor.extract(normalized_paragraphs)
+        cleaned_paragraphs = clean_paragraphs(normalized_paragraphs, self.config.extraction)
+        extracted_mentions = self._extractor.extract(cleaned_paragraphs)
         filtered_mentions = filter_mentions(extracted_mentions, self.config.extraction)
         concepts = self._build_concepts(filtered_mentions)
         return _PipelineArtifacts(
-            paragraphs=normalized_paragraphs,
+            paragraphs=cleaned_paragraphs,
             mentions=filtered_mentions,
             concepts=concepts,
             graph=build_concept_graph(filtered_mentions, self.config.graph),
