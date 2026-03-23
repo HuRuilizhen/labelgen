@@ -1,4 +1,4 @@
-"""Public package exports for labelgen."""
+"""Public package exports for the `labelgen` Python package."""
 
 from labelgen.config import LabelGeneratorConfig
 from labelgen.io.serialize import dump_result, load_result

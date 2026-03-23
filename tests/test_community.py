@@ -1,12 +1,15 @@
 """Tests for community detection behavior."""
 
+from labelgen.community.connected_components_detector import (
+    ConnectedComponentsCommunityDetector,
+)
 from labelgen.community.leiden_detector import LeidenCommunityDetector
 from labelgen.config import CommunityDetectionConfig
 from labelgen.graph.concept_graph import ConceptGraph
 
 
-def test_connected_components_fallback_groups_disconnected_subgraphs() -> None:
-    detector = LeidenCommunityDetector(CommunityDetectionConfig())
+def test_connected_components_detector_groups_disconnected_subgraphs() -> None:
+    detector = ConnectedComponentsCommunityDetector()
     graph = ConceptGraph(
         node_ids=["a", "b", "c", "d"],
         edge_weights={
@@ -15,7 +18,6 @@ def test_connected_components_fallback_groups_disconnected_subgraphs() -> None:
         },
     )
 
-    detector._detect_with_leiden = lambda _: None  # type: ignore[method-assign]
     communities = detector.detect(graph)
 
     assert [community.concept_ids for community in communities] == [["a", "b"], ["c", "d"]]

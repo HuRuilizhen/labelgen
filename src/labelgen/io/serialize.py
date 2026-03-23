@@ -68,6 +68,11 @@ def config_from_dict(data: dict[str, Any]) -> LabelGeneratorConfig:
     verbalization = VerbalizationConfig(**_as_string_key_dict(data.get("verbalization")))
     return LabelGeneratorConfig(
         random_seed=_as_int(data.get("random_seed"), default=42),
+        use_nlp_extractor=_as_bool(data.get("use_nlp_extractor"), default=True),
+        use_graph_community_detection=_as_bool(
+            data.get("use_graph_community_detection"),
+            default=True,
+        ),
         extraction=extraction,
         graph=graph,
         community_detection=community_detection,
@@ -195,4 +200,14 @@ def _as_int(value: object, *, default: int) -> int:
         return default
     if not isinstance(value, int):
         raise TypeError("Expected an integer value.")
+    return value
+
+
+def _as_bool(value: object, *, default: bool) -> bool:
+    """Normalize boolean values from serialized data."""
+
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise TypeError("Expected a boolean value.")
     return value

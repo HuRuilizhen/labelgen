@@ -1,9 +1,8 @@
-"""Leiden community detection with deterministic fallback behavior."""
+"""Leiden community detection."""
 
 from __future__ import annotations
 
 import importlib
-from collections import defaultdict
 from typing import cast
 
 from labelgen.community.detector import CommunityDetector
@@ -13,30 +12,37 @@ from labelgen.types import Community
 
 
 class LeidenCommunityDetector(CommunityDetector):
-    """Community detector implementation based on Leiden."""
+    """Community detector implementation backed by Leiden.
+
+    This is the default detector for `0.1.0`. If `igraph` or `leidenalg` is missing,
+    initialization or detection raises a clear runtime error so the caller can
+    explicitly opt out to the connected-components detector.
+    """
 
     def __init__(self, config: CommunityDetectionConfig) -> None:
         self._config = config
 
     def detect(self, graph: ConceptGraph) -> list[Community]:
-        """Detect communities in the graph."""
+        """Detect communities with Leiden and return stable community models."""
 
         if not graph.node_ids:
             return []
 
         memberships = self._detect_with_leiden(graph)
-        if memberships is None:
-            memberships = self._detect_with_connected_components(graph)
         return self._build_communities(graph.node_ids, memberships)
 
-    def _detect_with_leiden(self, graph: ConceptGraph) -> list[int] | None:
-        """Run Leiden if optional graph dependencies are available."""
+    def _detect_with_leiden(self, graph: ConceptGraph) -> list[int]:
+        """Run Leiden community detection and return node memberships."""
 
         try:
             igraph = importlib.import_module("igraph")
             leidenalg = importlib.import_module("leidenalg")
-        except ImportError:
-            return None
+        except ImportError as error:
+            raise RuntimeError(
+                "igraph and leidenalg are required for graph community detection. "
+                "Disable graph community detection in LabelGeneratorConfig to use "
+                "the connected-components detector."
+            ) from error
 
         node_to_index = {node_id: index for index, node_id in enumerate(graph.node_ids)}
         sorted_edges = sorted(graph.edge_weights)
@@ -47,7 +53,7 @@ class LeidenCommunityDetector(CommunityDetector):
         partition_type = getattr(leidenalg, "RBConfigurationVertexPartition", None)
         find_partition = getattr(leidenalg, "find_partition", None)
         if partition_type is None or not callable(find_partition):
-            return None
+            raise RuntimeError("leidenalg.find_partition is unavailable in the installed package.")
 
         partition = find_partition(
             graph_object,
@@ -58,36 +64,13 @@ class LeidenCommunityDetector(CommunityDetector):
         )
         membership = self._coerce_membership(getattr(partition, "membership", None))
         if membership is None or len(membership) != len(graph.node_ids):
-            return None
+            raise RuntimeError("Leiden partition did not return a valid membership list.")
         return membership
-
-    def _detect_with_connected_components(self, graph: ConceptGraph) -> list[int]:
-        """Compute deterministic connected components as a fallback."""
-
-        adjacency: dict[str, set[str]] = {node_id: set() for node_id in graph.node_ids}
-        for left, right in sorted(graph.edge_weights):
-            adjacency[left].add(right)
-            adjacency[right].add(left)
-
-        memberships: dict[str, int] = {}
-        component_index = 0
-        for node_id in sorted(graph.node_ids):
-            if node_id in memberships:
-                continue
-
-            stack = [node_id]
-            while stack:
-                current = stack.pop()
-                if current in memberships:
-                    continue
-                memberships[current] = component_index
-                stack.extend(sorted(adjacency[current], reverse=True))
-            component_index += 1
-
-        return [memberships[node_id] for node_id in graph.node_ids]
 
     def _build_communities(self, node_ids: list[str], membership: list[int]) -> list[Community]:
         """Build stable community models from membership assignments."""
+
+        from collections import defaultdict
 
         grouped: dict[int, list[str]] = defaultdict(list)
         for node_id, community_index in zip(node_ids, membership, strict=True):

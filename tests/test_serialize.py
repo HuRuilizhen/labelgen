@@ -6,7 +6,12 @@ from labelgen import LabelGenerator, LabelGeneratorConfig, dump_result, load_res
 
 
 def test_result_round_trip_preserves_core_fields(tmp_path: Path) -> None:
-    generator = LabelGenerator(LabelGeneratorConfig())
+    generator = LabelGenerator(
+        LabelGeneratorConfig(
+            use_nlp_extractor=False,
+            use_graph_community_detection=False,
+        )
+    )
     result = generator.fit_transform(
         [
             "OpenAI builds language models for developers.",
@@ -32,6 +37,8 @@ def test_result_round_trip_preserves_core_fields(tmp_path: Path) -> None:
 def test_generator_save_and_load_preserve_config(tmp_path: Path) -> None:
     config = LabelGeneratorConfig()
     config.random_seed = 17
+    config.use_nlp_extractor = False
+    config.use_graph_community_detection = False
     config.extraction.min_document_frequency = 2
     config.label_assignment.max_labels_per_paragraph = 1
 
@@ -41,12 +48,17 @@ def test_generator_save_and_load_preserve_config(tmp_path: Path) -> None:
     loaded = LabelGenerator.load(output_path)
 
     assert loaded.config.random_seed == 17
+    assert loaded.config.use_nlp_extractor is False
+    assert loaded.config.use_graph_community_detection is False
     assert loaded.config.extraction.min_document_frequency == 2
     assert loaded.config.label_assignment.max_labels_per_paragraph == 1
 
 
 def test_generator_save_and_load_preserve_fitted_state(tmp_path: Path) -> None:
-    config = LabelGeneratorConfig()
+    config = LabelGeneratorConfig(
+        use_nlp_extractor=False,
+        use_graph_community_detection=False,
+    )
     config.extraction.min_document_frequency = 2
 
     generator = LabelGenerator(config)

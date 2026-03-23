@@ -7,9 +7,15 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from labelgen.community.connected_components_detector import (
+    ConnectedComponentsCommunityDetector,
+)
+from labelgen.community.detector import CommunityDetector
 from labelgen.community.leiden_detector import LeidenCommunityDetector
 from labelgen.config import LabelGeneratorConfig
+from labelgen.extraction.concept_extractor import ConceptExtractor
 from labelgen.extraction.filtering import filter_mentions
+from labelgen.extraction.heuristic_extractor import HeuristicConceptExtractor
 from labelgen.extraction.normalization import normalize_surface
 from labelgen.extraction.spacy_extractor import SpacyConceptExtractor
 from labelgen.graph.builder import build_concept_graph
@@ -40,18 +46,43 @@ class _PipelineArtifacts:
 
 
 class LabelGenerator:
-    """Library entrypoint for label generation."""
+    """Stateful public entrypoint for paragraph label generation.
+
+    `fit()` learns concept communities from a corpus, `transform()` applies the learned
+    communities to new paragraphs, and `fit_transform()` performs both steps on the
+    same input. By default the generator uses spaCy extraction and Leiden community
+    detection; callers can explicitly opt out through `LabelGeneratorConfig`.
+    """
 
     def __init__(self, config: LabelGeneratorConfig | None = None) -> None:
         self.config = config or LabelGeneratorConfig()
-        self._extractor = SpacyConceptExtractor(self.config.extraction)
-        self._detector = LeidenCommunityDetector(self.config.community_detection)
+        self._extractor = self._build_extractor()
+        self._detector = self._build_detector()
         self._is_fitted = False
         self._fitted_communities: list[Community] = []
         self._fitted_concepts: list[Concept] = []
 
+    @property
+    def extractor_name(self) -> str:
+        """Return the active extractor implementation name."""
+
+        return type(self._extractor).__name__
+
+    @property
+    def detector_name(self) -> str:
+        """Return the active community detector implementation name."""
+
+        return type(self._detector).__name__
+
     def fit(self, paragraphs: list[str] | list[Paragraph]) -> LabelGenerator:
-        """Learn concept communities from the provided paragraphs."""
+        """Learn concepts and communities from a training corpus.
+
+        Args:
+            paragraphs: Input paragraphs as raw strings or `Paragraph` objects.
+
+        Returns:
+            The fitted generator instance for chaining.
+        """
 
         artifacts = self._extract_artifacts(paragraphs)
         retained_concept_ids = self._select_retained_concept_ids(
@@ -70,7 +101,14 @@ class LabelGenerator:
         return self
 
     def transform(self, paragraphs: list[str] | list[Paragraph]) -> LabelGenerationResult:
-        """Assign labels to paragraphs using previously learned communities."""
+        """Assign labels with previously learned communities.
+
+        Args:
+            paragraphs: New paragraphs to label using fitted communities.
+
+        Returns:
+            A structured labeling result limited to concepts retained during fitting.
+        """
 
         if not self._is_fitted:
             raise RuntimeError("LabelGenerator.transform() requires a fitted generator.")
@@ -87,7 +125,7 @@ class LabelGenerator:
         )
 
     def fit_transform(self, paragraphs: list[str] | list[Paragraph]) -> LabelGenerationResult:
-        """Learn communities and label the same input paragraphs."""
+        """Fit the generator and label the same input paragraphs in one pass."""
 
         artifacts = self._extract_artifacts(paragraphs)
         retained_concept_ids = self._select_retained_concept_ids(
@@ -147,6 +185,20 @@ class LabelGenerator:
             concepts=concepts,
             graph=build_concept_graph(filtered_mentions, self.config.graph),
         )
+
+    def _build_extractor(self) -> ConceptExtractor:
+        """Build the configured concept extractor implementation."""
+
+        if self.config.use_nlp_extractor:
+            return SpacyConceptExtractor(self.config.extraction)
+        return HeuristicConceptExtractor(self.config.extraction)
+
+    def _build_detector(self) -> CommunityDetector:
+        """Build the configured community detector implementation."""
+
+        if self.config.use_graph_community_detection:
+            return LeidenCommunityDetector(self.config.community_detection)
+        return ConnectedComponentsCommunityDetector()
 
     def _retain_concepts(
         self,

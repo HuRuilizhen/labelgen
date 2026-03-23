@@ -1,4 +1,4 @@
-"""Typed data models for the label generation pipeline."""
+"""Typed public result models for the label generation pipeline."""
 
 from dataclasses import dataclass, field
 from typing import Any
@@ -12,7 +12,7 @@ def _empty_string_list() -> list[str]:
 
 @dataclass(slots=True)
 class Paragraph:
-    """A normalized input paragraph."""
+    """A normalized paragraph accepted by and returned from the pipeline."""
 
     id: str
     text: str
@@ -21,7 +21,7 @@ class Paragraph:
 
 @dataclass(slots=True)
 class Concept:
-    """A normalized concept node."""
+    """A normalized concept retained by the fitted label-generation pipeline."""
 
     id: str
     surface: str
@@ -32,7 +32,7 @@ class Concept:
 
 @dataclass(slots=True)
 class ConceptMention:
-    """A concept mention extracted from a paragraph."""
+    """An extracted concept mention with optional character offsets."""
 
     paragraph_id: str
     concept_id: str
@@ -45,7 +45,7 @@ class ConceptMention:
 
 @dataclass(slots=True)
 class Community:
-    """A detected community of concepts."""
+    """A detected concept community with human-readable naming metadata."""
 
     id: str
     concept_ids: list[str]
@@ -56,7 +56,7 @@ class Community:
 
 @dataclass(slots=True)
 class ParagraphLabels:
-    """Assigned labels for a paragraph."""
+    """Assigned labels and evidence scores for a single paragraph."""
 
     paragraph_id: str
     label_ids: list[str]
@@ -66,7 +66,7 @@ class ParagraphLabels:
 
 @dataclass(slots=True)
 class GraphSummary:
-    """Basic statistics about the concept graph."""
+    """Basic statistics and debug metadata for the concept graph."""
 
     node_count: int
     edge_count: int
@@ -75,7 +75,7 @@ class GraphSummary:
 
 @dataclass(slots=True)
 class LabelGenerationResult:
-    """End-to-end result of label generation."""
+    """End-to-end structured result returned by `fit_transform` and `transform`."""
 
     paragraphs: list[Paragraph]
     concepts: list[Concept]
