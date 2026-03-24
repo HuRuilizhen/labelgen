@@ -38,9 +38,12 @@ def test_result_round_trip_preserves_core_fields(tmp_path: Path) -> None:
 def test_generator_save_and_load_preserve_config(tmp_path: Path) -> None:
     config = LabelGeneratorConfig()
     config.random_seed = 17
+    config.extractor_mode = "llm"
     config.use_nlp_extractor = False
     config.use_graph_community_detection = False
     config.extraction.min_document_frequency = 2
+    config.extraction.llm.provider = "mistral"
+    config.extraction.llm.model = "mistral-small-latest"
     config.label_assignment.max_labels_per_paragraph = 1
 
     generator = LabelGenerator(config)
@@ -49,9 +52,12 @@ def test_generator_save_and_load_preserve_config(tmp_path: Path) -> None:
     loaded = LabelGenerator.load(output_path)
 
     assert loaded.config.random_seed == 17
+    assert loaded.config.extractor_mode == "llm"
     assert loaded.config.use_nlp_extractor is False
     assert loaded.config.use_graph_community_detection is False
     assert loaded.config.extraction.min_document_frequency == 2
+    assert loaded.config.extraction.llm.provider == "mistral"
+    assert loaded.config.extraction.llm.model == "mistral-small-latest"
     assert loaded.config.label_assignment.max_labels_per_paragraph == 1
 
 
