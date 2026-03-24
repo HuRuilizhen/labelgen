@@ -41,3 +41,12 @@ def test_clean_paragraphs_can_be_disabled() -> None:
     cleaned = clean_paragraphs([paragraph], config)
 
     assert cleaned[0].text == "PROBLEM SUMMARY: Keep https://example.com"
+
+
+def test_clean_paragraph_text_removes_subscribe_boilerplate_and_markup_tokens() -> None:
+    config = ExtractionConfig()
+    text = "SUBSCRIBE You can track all active APARs for this component [ [ * *"
+
+    cleaned = clean_paragraph_text(text, config)
+
+    assert cleaned == ""

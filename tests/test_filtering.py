@@ -36,6 +36,30 @@ def test_filter_mentions_rejects_url_like_and_generic_shell_concepts() -> None:
     assert [mention.normalized for mention in filtered] == ["internal compiler optimization"]
 
 
+def test_filter_mentions_rejects_markup_heavy_concepts() -> None:
+    config = ExtractionConfig()
+    mentions = [
+        ConceptMention(
+            paragraph_id="p1",
+            concept_id="c-markup",
+            surface="[ qradar vulnerability manager",
+            normalized="[ qradar vulnerability manager",
+            kind="noun_phrase",
+        ),
+        ConceptMention(
+            paragraph_id="p1",
+            concept_id="c-good",
+            surface="qradar vulnerability manager",
+            normalized="qradar vulnerability manager",
+            kind="noun_phrase",
+        ),
+    ]
+
+    filtered = filter_mentions(mentions, config)
+
+    assert [mention.normalized for mention in filtered] == ["qradar vulnerability manager"]
+
+
 def test_canonicalize_mentions_merges_matching_normalized_text_across_kinds() -> None:
     config = ExtractionConfig()
     mentions = [

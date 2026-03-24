@@ -13,6 +13,7 @@ _URL_LIKE_RE = re.compile(
     r"(?:https?://|www\.|\.com\b|\.org\b|uid=|cgi-bin|docview\.wss|support/)",
     re.IGNORECASE,
 )
+_MARKUP_HEAVY_RE = re.compile(r"^[\[\]\*\"'`/\\:;,.()\-]+|[\[\]\*]{2,}")
 _GENERIC_SHELLS = frozenset(
     {
         "you",
@@ -63,6 +64,8 @@ def filter_mentions(
         if not _ALNUM_RE.search(mention.normalized):
             continue
         if config.reject_url_like_concepts and _is_url_like(mention.normalized):
+            continue
+        if _is_markup_heavy(mention.normalized):
             continue
         if config.reject_stopword_concepts and _is_all_stopwords(mention.normalized):
             continue
@@ -158,6 +161,18 @@ def _is_url_like(text: str) -> bool:
     """Return whether a concept is dominated by URLs or support-link syntax."""
 
     return bool(_URL_LIKE_RE.search(text))
+
+
+def _is_markup_heavy(text: str) -> bool:
+    """Return whether a concept is dominated by markup fragments."""
+
+    if _MARKUP_HEAVY_RE.search(text):
+        return True
+    tokens = [token for token in text.split() if token]
+    if not tokens:
+        return True
+    punct_tokens = sum(1 for token in tokens if not _ALNUM_RE.search(token))
+    return punct_tokens > 0 and punct_tokens >= len(tokens) / 2
 
 
 def _is_generic_shell(text: str) -> bool:

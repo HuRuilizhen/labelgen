@@ -9,11 +9,17 @@ from labelgen.types import Paragraph
 
 _URL_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
 _BANNER_RE = re.compile(r"(?:[\*\-=#_]){4,}")
+_STAR_TOKEN_RE = re.compile(r"(?:\s\*\s*){2,}|\*{1,}")
+_BRACKET_RE = re.compile(r"[\[\]]")
+_SUBSCRIBE_APAR_RE = re.compile(
+    r"subscribe\s+you can track all active apars for this component\.?",
+    re.IGNORECASE,
+)
 _SECTION_HEADER_RE = re.compile(
     r"\b(?:"
     r"problem summary|problem description|problem conclusion|fix information|"
     r"subscribe to this apar|apar status|error description|users affected|"
-    r"direct links to fixes|references"
+    r"direct links to fixes|references|reported component name|fixed component name"
     r")\b:?",
     re.IGNORECASE,
 )
@@ -41,10 +47,13 @@ def clean_paragraph_text(text: str, config: ExtractionConfig) -> str:
     """Clean technical-document artifacts from paragraph text."""
 
     cleaned = _BANNER_RE.sub(" ", text)
+    cleaned = _SUBSCRIBE_APAR_RE.sub(" ", cleaned)
     if config.strip_urls:
         cleaned = _URL_RE.sub(" ", cleaned)
     if config.suppress_section_headers:
         cleaned = _SECTION_HEADER_RE.sub(" ", cleaned)
+    cleaned = _BRACKET_RE.sub(" ", cleaned)
+    cleaned = _STAR_TOKEN_RE.sub(" ", cleaned)
     cleaned = _EXTRA_PUNCT_SPACE_RE.sub(r"\1", cleaned)
     cleaned = _WHITESPACE_RE.sub(" ", cleaned).strip(" -:;,.")
     return cleaned
