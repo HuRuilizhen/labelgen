@@ -1,11 +1,52 @@
 """Helpers for filtering extracted concepts."""
 
+from __future__ import annotations
+
+import hashlib
 import re
 
 from labelgen.config import ExtractionConfig
 from labelgen.types import ConceptMention
 
 _ALNUM_RE = re.compile(r"[a-z0-9]")
+_URL_LIKE_RE = re.compile(
+    r"(?:https?://|www\.|\.com\b|\.org\b|uid=|cgi-bin|docview\.wss|support/)",
+    re.IGNORECASE,
+)
+_GENERIC_SHELLS = frozenset(
+    {
+        "you",
+        "they",
+        "one",
+        "line",
+        "problem summary",
+        "problem description",
+        "problem conclusion",
+        "error description",
+        "fix information",
+        "apar status",
+        "users affected",
+        "all active apars",
+        "this component",
+        "this apar",
+        "the problem",
+        "the fix",
+        "reported component name",
+        "fixed component name",
+        "direct links",
+        "references",
+    }
+)
+_GENERIC_PREFIXES = (
+    "reported component name ",
+    "fixed component name ",
+    "problem summary ",
+    "problem description ",
+    "problem conclusion ",
+    "error description ",
+    "fix information ",
+    "users affected ",
+)
 
 
 def filter_mentions(
@@ -21,10 +62,44 @@ def filter_mentions(
             continue
         if not _ALNUM_RE.search(mention.normalized):
             continue
+        if config.reject_url_like_concepts and _is_url_like(mention.normalized):
+            continue
         if config.reject_stopword_concepts and _is_all_stopwords(mention.normalized):
+            continue
+        if config.reject_generic_shell_concepts and _is_generic_shell(mention.normalized):
             continue
         filtered.append(mention)
     return filtered
+
+
+def canonicalize_mentions(
+    mentions: list[ConceptMention],
+    config: ExtractionConfig,
+) -> list[ConceptMention]:
+    """Canonicalize mention concept identifiers after filtering."""
+
+    if not config.merge_concepts_by_normalized_text:
+        return mentions
+
+    canonical_ids: dict[str, str] = {}
+    canonicalized: list[ConceptMention] = []
+    for mention in mentions:
+        canonical_id = canonical_ids.setdefault(
+            mention.normalized,
+            _canonical_concept_id(mention.normalized),
+        )
+        canonicalized.append(
+            ConceptMention(
+                paragraph_id=mention.paragraph_id,
+                concept_id=canonical_id,
+                surface=mention.surface,
+                normalized=mention.normalized,
+                kind=mention.kind,
+                start=mention.start,
+                end=mention.end,
+            )
+        )
+    return canonicalized
 
 
 def _is_all_stopwords(text: str) -> bool:
@@ -59,3 +134,24 @@ def _is_all_stopwords(text: str) -> bool:
     }
     tokens = [token for token in text.split(" ") if token]
     return bool(tokens) and all(token in stopwords for token in tokens)
+
+
+def _is_url_like(text: str) -> bool:
+    """Return whether a concept is dominated by URLs or support-link syntax."""
+
+    return bool(_URL_LIKE_RE.search(text))
+
+
+def _is_generic_shell(text: str) -> bool:
+    """Return whether a concept is a generic support-document shell."""
+
+    if text in _GENERIC_SHELLS:
+        return True
+    return any(text.startswith(prefix) for prefix in _GENERIC_PREFIXES)
+
+
+def _canonical_concept_id(normalized: str) -> str:
+    """Build a stable canonical concept identifier from normalized text."""
+
+    digest = hashlib.sha256(f"concept:{normalized}".encode()).hexdigest()
+    return digest[:16]

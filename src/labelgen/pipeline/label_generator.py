@@ -14,7 +14,7 @@ from labelgen.community.detector import CommunityDetector
 from labelgen.community.leiden_detector import LeidenCommunityDetector
 from labelgen.config import LabelGeneratorConfig
 from labelgen.extraction.concept_extractor import ConceptExtractor
-from labelgen.extraction.filtering import filter_mentions
+from labelgen.extraction.filtering import canonicalize_mentions, filter_mentions
 from labelgen.extraction.heuristic_extractor import HeuristicConceptExtractor
 from labelgen.extraction.normalization import normalize_surface
 from labelgen.extraction.spacy_extractor import SpacyConceptExtractor
@@ -180,12 +180,13 @@ class LabelGenerator:
         cleaned_paragraphs = clean_paragraphs(normalized_paragraphs, self.config.extraction)
         extracted_mentions = self._extractor.extract(cleaned_paragraphs)
         filtered_mentions = filter_mentions(extracted_mentions, self.config.extraction)
-        concepts = self._build_concepts(filtered_mentions)
+        canonical_mentions = canonicalize_mentions(filtered_mentions, self.config.extraction)
+        concepts = self._build_concepts(canonical_mentions)
         return _PipelineArtifacts(
             paragraphs=cleaned_paragraphs,
-            mentions=filtered_mentions,
+            mentions=canonical_mentions,
             concepts=concepts,
-            graph=build_concept_graph(filtered_mentions, self.config.graph),
+            graph=build_concept_graph(canonical_mentions, self.config.graph),
         )
 
     def _build_extractor(self) -> ConceptExtractor:
