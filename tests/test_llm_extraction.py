@@ -1,0 +1,188 @@
+"""Tests for LLM-backed concept extraction."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from labelgen import LabelGenerator, LabelGeneratorConfig
+from labelgen.extraction.llm_extractor import LLMConceptExtractor
+from labelgen.extraction.llm_provider import LLMProviderClient
+from labelgen.types import Paragraph
+
+
+class FakeLLMProviderClient(LLMProviderClient):
+    """Simple fake provider client returning predetermined JSON."""
+
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload = payload
+        self.call_count = 0
+        self.messages: list[dict[str, str]] = []
+
+    def complete_chat(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        config: object,
+    ) -> str:
+        self.messages = messages
+        del config
+        self.call_count += 1
+        return json.dumps(self.payload)
+
+
+def test_llm_extractor_returns_llm_concept_mentions(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_dir = str(tmp_path)
+    client = FakeLLMProviderClient(
+        {
+            "paragraphs": [["OpenAI platform", "developer tooling"]]
+        }
+    )
+    extractor = LLMConceptExtractor(config.extraction, client=client)
+
+    mentions = extractor.extract([Paragraph(id="p1", text="OpenAI builds developer tooling.")])
+
+    assert client.call_count == 1
+    assert [mention.normalized for mention in mentions] == [
+        "openai platform",
+        "developer tooling",
+    ]
+    assert all(mention.kind == "llm_concept" for mention in mentions)
+
+
+def test_llm_extractor_uses_custom_prompt_template(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_dir = str(tmp_path)
+    config.extraction.llm.prompt_template = (
+        "Extract concepts.\n"
+        "Cap: {max_concepts_per_paragraph}\n"
+        "{paragraphs_block}"
+    )
+    client = FakeLLMProviderClient({"paragraphs": [["OpenAI platform"]]})
+    extractor = LLMConceptExtractor(config.extraction, client=client)
+
+    extractor.extract([Paragraph(id="p1", text="OpenAI builds developer tooling.")])
+
+    assert len(client.messages) == 2
+    assert "Cap: 12" in client.messages[1]["content"]
+    assert "Paragraph 0: OpenAI builds developer tooling." in client.messages[1]["content"]
+
+
+def test_llm_extractor_uses_disk_cache(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_dir = str(tmp_path / "cache")
+    client = FakeLLMProviderClient(
+        {
+            "paragraphs": [
+                ["OpenAI platform"],
+            ]
+        }
+    )
+    extractor = LLMConceptExtractor(config.extraction, client=client)
+    paragraphs = [Paragraph(id="p1", text="OpenAI builds platforms.")]
+
+    first = extractor.extract(paragraphs)
+    second = extractor.extract(paragraphs)
+
+    assert [mention.normalized for mention in first] == [mention.normalized for mention in second]
+    assert client.call_count == 1
+
+
+def test_llm_cache_key_includes_max_concepts_per_paragraph(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_dir = str(tmp_path / "cache")
+    config.extraction.llm.max_concepts_per_paragraph = 1
+    first_client = FakeLLMProviderClient({"paragraphs": [["OpenAI", "developer tooling"]]})
+    extractor = LLMConceptExtractor(config.extraction, client=first_client)
+    paragraphs = [Paragraph(id="p1", text="OpenAI builds developer tooling.")]
+
+    first_mentions = extractor.extract(paragraphs)
+
+    config.extraction.llm.max_concepts_per_paragraph = 2
+    second_client = FakeLLMProviderClient({"paragraphs": [["OpenAI", "developer tooling"]]})
+    second_extractor = LLMConceptExtractor(config.extraction, client=second_client)
+    second_mentions = second_extractor.extract(paragraphs)
+
+    assert [mention.normalized for mention in first_mentions] == ["openai"]
+    assert [mention.normalized for mention in second_mentions] == [
+        "openai",
+        "developer tooling",
+    ]
+    assert first_client.call_count == 1
+    assert second_client.call_count == 1
+
+
+def test_label_generator_uses_llm_extractor_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    client = FakeLLMProviderClient(
+        {
+            "paragraphs": [
+                ["OpenAI", "language models"],
+                ["language models", "production systems"],
+            ]
+        }
+    )
+    def _build_fake_client(config: object) -> LLMProviderClient:
+        del config
+        return client
+
+    monkeypatch.setattr(
+        "labelgen.extraction.llm_extractor.build_provider_client",
+        _build_fake_client,
+    )
+
+    config = LabelGeneratorConfig(
+        extractor_mode="llm",
+        use_graph_community_detection=False,
+    )
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_enabled = False
+    config.extraction.llm.cache_dir = str(tmp_path / "cache")
+
+    generator = LabelGenerator(config)
+    result = generator.fit_transform(
+        [
+            "OpenAI builds language models.",
+            "Production systems use language models.",
+        ]
+    )
+
+    assert generator.extractor_name == "LLMConceptExtractor"
+    assert result.concepts
+    assert result.paragraph_labels[0].label_ids
+
+
+def test_llm_mode_requires_configured_model() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = ""
+    config.use_graph_community_detection = False
+    generator = LabelGenerator(config)
+
+    with pytest.raises(RuntimeError, match="requires a configured model"):
+        generator.fit_transform(["OpenAI builds language models."])
+
+
+def test_llm_extractor_requires_positional_paragraph_lists(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_dir = str(tmp_path)
+    client = FakeLLMProviderClient(
+        {
+            "paragraphs": [
+                {"paragraph_index": 0, "concepts": ["OpenAI platform"]},
+            ]
+        }
+    )
+    extractor = LLMConceptExtractor(config.extraction, client=client)
+
+    with pytest.raises(RuntimeError, match="must be a list of strings"):
+        extractor.extract([Paragraph(id="p1", text="OpenAI builds platforms.")])

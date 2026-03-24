@@ -16,6 +16,7 @@ from labelgen.config import LabelGeneratorConfig
 from labelgen.extraction.concept_extractor import ConceptExtractor
 from labelgen.extraction.filtering import canonicalize_mentions, filter_mentions
 from labelgen.extraction.heuristic_extractor import HeuristicConceptExtractor
+from labelgen.extraction.llm_extractor import LLMConceptExtractor
 from labelgen.extraction.normalization import normalize_surface
 from labelgen.extraction.spacy_extractor import SpacyConceptExtractor
 from labelgen.graph.builder import build_concept_graph
@@ -192,8 +193,11 @@ class LabelGenerator:
     def _build_extractor(self) -> ConceptExtractor:
         """Build the configured concept extractor implementation."""
 
-        if self.config.use_nlp_extractor:
+        mode = self.config.resolved_extractor_mode()
+        if mode == "spacy":
             return SpacyConceptExtractor(self.config.extraction)
+        if mode == "llm":
+            return LLMConceptExtractor(self.config.extraction)
         return HeuristicConceptExtractor(self.config.extraction)
 
     def _build_detector(self) -> CommunityDetector:

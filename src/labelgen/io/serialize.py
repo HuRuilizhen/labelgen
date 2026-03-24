@@ -10,9 +10,11 @@ from typing import Any, cast
 from labelgen.config import (
     CommunityDetectionConfig,
     ExtractionConfig,
+    ExtractorMode,
     GraphConfig,
     LabelAssignmentConfig,
     LabelGeneratorConfig,
+    LLMExtractionConfig,
     VerbalizationConfig,
 )
 from labelgen.types import (
@@ -57,7 +59,11 @@ def config_to_dict(config: LabelGeneratorConfig) -> dict[str, Any]:
 def config_from_dict(data: dict[str, Any]) -> LabelGeneratorConfig:
     """Reconstruct generator configuration from a serialized dictionary."""
 
-    extraction = ExtractionConfig(**_as_string_key_dict(data.get("extraction")))
+    extraction_data = _as_string_key_dict(data.get("extraction"))
+    llm_data = _as_string_key_dict(extraction_data.get("llm"))
+    extraction_data = dict(extraction_data)
+    extraction_data["llm"] = LLMExtractionConfig(**llm_data)
+    extraction = ExtractionConfig(**extraction_data)
     graph = GraphConfig(**_as_string_key_dict(data.get("graph")))
     community_detection = CommunityDetectionConfig(
         **_as_string_key_dict(data.get("community_detection"))
@@ -68,6 +74,7 @@ def config_from_dict(data: dict[str, Any]) -> LabelGeneratorConfig:
     verbalization = VerbalizationConfig(**_as_string_key_dict(data.get("verbalization")))
     return LabelGeneratorConfig(
         random_seed=_as_int(data.get("random_seed"), default=42),
+        extractor_mode=_as_optional_extractor_mode(data.get("extractor_mode")),
         use_nlp_extractor=_as_bool(data.get("use_nlp_extractor"), default=True),
         use_graph_community_detection=_as_bool(
             data.get("use_graph_community_detection"),
@@ -211,3 +218,15 @@ def _as_bool(value: object, *, default: bool) -> bool:
     if not isinstance(value, bool):
         raise TypeError("Expected a boolean value.")
     return value
+
+
+def _as_optional_extractor_mode(value: object) -> ExtractorMode | None:
+    """Normalize optional extractor mode values from serialized data."""
+
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError("Expected a string value.")
+    if value not in {"spacy", "heuristic", "llm"}:
+        raise TypeError("Unsupported extractor mode in serialized config.")
+    return cast(ExtractorMode, value)

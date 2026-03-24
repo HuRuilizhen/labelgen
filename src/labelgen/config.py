@@ -1,6 +1,50 @@
 """Typed public configuration for the label generation pipeline."""
 
 from dataclasses import dataclass, field
+from typing import Literal
+
+ExtractorMode = Literal["spacy", "heuristic", "llm"]
+LLMProviderName = Literal["openai", "mistral", "qwen"]
+
+
+@dataclass(slots=True)
+class LLMExtractionConfig:
+    """Configuration for provider-backed LLM concept extraction.
+
+    Attributes:
+        provider: LLM provider identifier.
+        model: Provider model name.
+        api_key_env_var: Optional environment variable holding the API key.
+        base_url: Optional base URL override for the provider endpoint.
+        organization: Optional organization or tenant identifier.
+        timeout_seconds: Request timeout for one LLM call.
+        max_retries: Number of retries for transient provider failures.
+        temperature: Sampling temperature for concept extraction.
+        max_output_tokens: Maximum completion length per batch response.
+        batch_size: Number of paragraphs sent in one provider request.
+        max_concepts_per_paragraph: Hard cap for parsed concepts per paragraph.
+        cache_enabled: Whether to cache parsed paragraph concepts on disk.
+        cache_dir: Cache directory for parsed LLM extraction outputs.
+        prompt_version: Prompt version identifier that participates in cache keys.
+        prompt_template: Optional user prompt template override. When unset, the
+            built-in release prompt is used.
+    """
+
+    provider: LLMProviderName = "openai"
+    model: str = ""
+    api_key_env_var: str | None = None
+    base_url: str | None = None
+    organization: str | None = None
+    timeout_seconds: float = 30.0
+    max_retries: int = 2
+    temperature: float = 0.0
+    max_output_tokens: int = 512
+    batch_size: int = 8
+    max_concepts_per_paragraph: int = 12
+    cache_enabled: bool = True
+    cache_dir: str | None = ".labelgen-cache"
+    prompt_version: str = "v1"
+    prompt_template: str | None = None
 
 
 @dataclass(slots=True)
@@ -28,6 +72,8 @@ class ExtractionConfig:
             document cleanup is enabled.
         suppress_section_headers: Remove common support-note section headers when
             technical document cleanup is enabled.
+        llm: Provider-backed LLM extraction configuration used when the top-level
+            extractor mode is set to `llm`.
         spacy_model_name: Installed spaCy pipeline name used by the default NLP
             extractor. `en_core_web_sm` is the recommended default, but callers
             can point this to another compatible installed pipeline.
@@ -46,8 +92,9 @@ class ExtractionConfig:
     clean_technical_documents: bool = True
     strip_urls: bool = True
     suppress_section_headers: bool = True
+    llm: LLMExtractionConfig = field(default_factory=LLMExtractionConfig)
     spacy_model_name: str = "en_core_web_sm"
-    allowed_kinds: tuple[str, ...] = ("entity", "noun_phrase")
+    allowed_kinds: tuple[str, ...] = ("entity", "noun_phrase", "llm_concept")
 
 
 @dataclass(slots=True)
@@ -94,13 +141,16 @@ class LabelGeneratorConfig:
 
     Attributes:
         random_seed: Global deterministic seed used by graph algorithms.
-        use_nlp_extractor: Use the default spaCy-backed extractor when `True`,
-            otherwise use the deterministic heuristic extractor.
+        extractor_mode: Preferred extraction mode. When unset, the deprecated
+            `use_nlp_extractor` flag is used for compatibility.
+        use_nlp_extractor: Deprecated compatibility flag. `True` maps to the
+            spaCy extractor and `False` maps to the deterministic heuristic extractor.
         use_graph_community_detection: Use Leiden community detection when `True`,
             otherwise use the deterministic connected-components detector.
     """
 
     random_seed: int = 42
+    extractor_mode: ExtractorMode | None = None
     use_nlp_extractor: bool = True
     use_graph_community_detection: bool = True
     extraction: ExtractionConfig = field(default_factory=ExtractionConfig)
@@ -112,3 +162,10 @@ class LabelGeneratorConfig:
         default_factory=LabelAssignmentConfig
     )
     verbalization: VerbalizationConfig = field(default_factory=VerbalizationConfig)
+
+    def resolved_extractor_mode(self) -> ExtractorMode:
+        """Resolve the active extractor mode with backward compatibility."""
+
+        if self.extractor_mode is not None:
+            return self.extractor_mode
+        return "spacy" if self.use_nlp_extractor else "heuristic"
