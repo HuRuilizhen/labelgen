@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -29,6 +31,17 @@ _DEFAULT_PROMPT_TEMPLATE = "\n".join(
 )
 
 
+@dataclass(slots=True)
+class _BatchExtractionPayload:
+    """Structured intermediate data for one LLM extraction batch."""
+
+    source: str
+    cache_digest: str | None
+    messages: list[dict[str, str]]
+    raw_response_text: str | None
+    concept_lists: list[list[str]]
+
+
 class LLMConceptExtractor(ConceptExtractor):
     """Concept extractor backed by a provider LLM."""
 
@@ -46,10 +59,20 @@ class LLMConceptExtractor(ConceptExtractor):
 
         self._validate_config(self._config.llm)
         mentions: list[ConceptMention] = []
-        for batch in self._iter_batches(paragraphs, self._config.llm.batch_size):
-            concept_lists = self._extract_batch_concepts(batch)
-            for paragraph, concepts in zip(batch, concept_lists, strict=True):
-                mentions.extend(self._build_mentions(paragraph, concepts))
+        for batch_index, batch in enumerate(
+            self._iter_batches(paragraphs, self._config.llm.batch_size)
+        ):
+            payload = self._extract_batch_concepts(batch)
+            batch_mentions: list[ConceptMention] = []
+            for paragraph, concepts in zip(batch, payload.concept_lists, strict=True):
+                batch_mentions.extend(self._build_mentions(paragraph, concepts))
+            self._write_artifact(
+                batch_index=batch_index,
+                paragraphs=batch,
+                payload=payload,
+                mentions=batch_mentions,
+            )
+            mentions.extend(batch_mentions)
         return mentions
 
     def _validate_config(self, config: LLMExtractionConfig) -> None:
@@ -74,15 +97,23 @@ class LLMConceptExtractor(ConceptExtractor):
             for index in range(0, len(paragraphs), batch_size)
         ]
 
-    def _extract_batch_concepts(self, paragraphs: list[Paragraph]) -> list[list[str]]:
+    def _extract_batch_concepts(self, paragraphs: list[Paragraph]) -> _BatchExtractionPayload:
         """Extract concept strings for one paragraph batch."""
 
-        cache_path = self._cache_path(paragraphs)
+        messages = self._build_messages(paragraphs)
+        cache_digest = self._cache_digest(paragraphs)
+        cache_path = self._cache_path(cache_digest)
         if cache_path is not None and cache_path.exists():
-            return self._load_cached_batch(cache_path, len(paragraphs))
+            return _BatchExtractionPayload(
+                source="cache",
+                cache_digest=cache_digest,
+                messages=messages,
+                raw_response_text=None,
+                concept_lists=self._load_cached_batch(cache_path, len(paragraphs)),
+            )
 
         content = self._client.complete_chat(
-            messages=self._build_messages(paragraphs),
+            messages=messages,
             config=self._config.llm,
         )
         concept_lists = self._parse_provider_output(content, len(paragraphs))
@@ -92,7 +123,13 @@ class LLMConceptExtractor(ConceptExtractor):
                 json.dumps({"paragraphs": concept_lists}, indent=2),
                 encoding="utf-8",
             )
-        return concept_lists
+        return _BatchExtractionPayload(
+            source="provider",
+            cache_digest=cache_digest,
+            messages=messages,
+            raw_response_text=content,
+            concept_lists=concept_lists,
+        )
 
     def _build_messages(self, paragraphs: list[Paragraph]) -> list[dict[str, str]]:
         """Build the system and user messages for one extraction batch."""
@@ -188,10 +225,10 @@ class LLMConceptExtractor(ConceptExtractor):
         digest = hashlib.sha256(f"llm_concept:{normalized}".encode()).hexdigest()
         return digest[:16]
 
-    def _cache_path(self, paragraphs: list[Paragraph]) -> Path | None:
-        """Return the cache path for one request batch when caching is enabled."""
+    def _cache_digest(self, paragraphs: list[Paragraph]) -> str | None:
+        """Return the cache digest for one request batch when caching is enabled."""
 
-        if not self._config.llm.cache_enabled or self._config.llm.cache_dir is None:
+        if not self._config.llm.cache_enabled:
             return None
         key_payload = {
             "provider": self._config.llm.provider,
@@ -203,8 +240,14 @@ class LLMConceptExtractor(ConceptExtractor):
             "max_concepts_per_paragraph": self._config.llm.max_concepts_per_paragraph,
             "paragraphs": [paragraph.text for paragraph in paragraphs],
         }
-        digest = hashlib.sha256(json.dumps(key_payload, sort_keys=True).encode()).hexdigest()
-        return Path(self._config.llm.cache_dir) / f"{digest}.json"
+        return hashlib.sha256(json.dumps(key_payload, sort_keys=True).encode()).hexdigest()
+
+    def _cache_path(self, cache_digest: str | None) -> Path | None:
+        """Return the cache path for one request batch when caching is enabled."""
+
+        if cache_digest is None or self._config.llm.cache_dir is None:
+            return None
+        return Path(self._config.llm.cache_dir) / f"{cache_digest}.json"
 
     def _load_cached_batch(self, path: Path, paragraph_count: int) -> list[list[str]]:
         """Load cached per-paragraph concepts from disk."""
@@ -226,3 +269,46 @@ class LLMConceptExtractor(ConceptExtractor):
             concepts = [concept for concept in cast(list[object], item) if isinstance(concept, str)]
             loaded.append(concepts)
         return loaded
+
+    def _write_artifact(
+        self,
+        *,
+        batch_index: int,
+        paragraphs: list[Paragraph],
+        payload: _BatchExtractionPayload,
+        mentions: list[ConceptMention],
+    ) -> None:
+        """Write a structured extraction artifact when recording is enabled."""
+
+        artifact_dir = self._artifact_dir()
+        if artifact_dir is None:
+            return
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        cache_suffix = payload.cache_digest[:12] if payload.cache_digest is not None else "nocache"
+        artifact_path = artifact_dir / f"{timestamp}-batch{batch_index:03d}-{cache_suffix}.json"
+        artifact_payload = {
+            "artifact_type": "llm_extraction_batch",
+            "created_at_utc": datetime.now(UTC).isoformat(),
+            "source": payload.source,
+            "cache_digest": payload.cache_digest,
+            "provider": self._config.llm.provider,
+            "model": self._config.llm.model,
+            "prompt_version": self._config.llm.prompt_version,
+            "prompt_template": self._config.llm.prompt_template,
+            "messages": payload.messages,
+            "paragraphs": [asdict(paragraph) for paragraph in paragraphs],
+            "raw_response_text": payload.raw_response_text,
+            "parsed_concepts": payload.concept_lists,
+            "mentions": [asdict(mention) for mention in mentions],
+        }
+        artifact_path.write_text(json.dumps(artifact_payload, indent=2), encoding="utf-8")
+
+    def _artifact_dir(self) -> Path | None:
+        """Resolve the optional artifact output directory."""
+
+        if not self._config.llm.record_extraction_artifacts:
+            return None
+        if self._config.llm.artifact_dir is None:
+            return None
+        return Path(self._config.llm.artifact_dir)

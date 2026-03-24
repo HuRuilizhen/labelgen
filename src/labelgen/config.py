@@ -25,6 +25,10 @@ class LLMExtractionConfig:
         max_concepts_per_paragraph: Hard cap for parsed concepts per paragraph.
         cache_enabled: Whether to cache parsed paragraph concepts on disk.
         cache_dir: Cache directory for parsed LLM extraction outputs.
+        record_extraction_artifacts: Write structured per-batch extraction
+            artifacts for audit and experiment analysis.
+        artifact_dir: Directory used for optional structured extraction
+            artifacts.
         prompt_version: Prompt version identifier that participates in cache keys.
         prompt_template: Optional user prompt template override. When unset, the
             built-in release prompt is used.
@@ -43,6 +47,8 @@ class LLMExtractionConfig:
     max_concepts_per_paragraph: int = 12
     cache_enabled: bool = True
     cache_dir: str | None = ".labelgen-cache"
+    record_extraction_artifacts: bool = False
+    artifact_dir: str | None = ".labelgen-artifacts"
     prompt_version: str = "v1"
     prompt_template: str | None = None
 

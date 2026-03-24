@@ -94,6 +94,34 @@ def test_llm_extractor_uses_disk_cache(tmp_path: Path) -> None:
     assert client.call_count == 1
 
 
+def test_llm_extractor_can_record_structured_artifacts(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_enabled = False
+    config.extraction.llm.record_extraction_artifacts = True
+    config.extraction.llm.artifact_dir = str(tmp_path / "artifacts")
+    client = FakeLLMProviderClient({"paragraphs": [["OpenAI platform", "developer tooling"]]})
+    extractor = LLMConceptExtractor(config.extraction, client=client)
+
+    mentions = extractor.extract([Paragraph(id="p1", text="OpenAI builds developer tooling.")])
+
+    artifact_files = sorted((tmp_path / "artifacts").glob("*.json"))
+    assert len(artifact_files) == 1
+    artifact = json.loads(artifact_files[0].read_text(encoding="utf-8"))
+    assert artifact["artifact_type"] == "llm_extraction_batch"
+    assert artifact["source"] == "provider"
+    assert artifact["provider"] == "openai"
+    assert artifact["model"] == "test-model"
+    assert artifact["paragraphs"][0]["id"] == "p1"
+    assert artifact["raw_response_text"] == json.dumps(
+        {"paragraphs": [["OpenAI platform", "developer tooling"]]}
+    )
+    assert artifact["parsed_concepts"] == [["OpenAI platform", "developer tooling"]]
+    assert [item["normalized"] for item in artifact["mentions"]] == [
+        mention.normalized for mention in mentions
+    ]
+
+
 def test_llm_cache_key_includes_max_concepts_per_paragraph(tmp_path: Path) -> None:
     config = LabelGeneratorConfig(extractor_mode="llm")
     config.extraction.llm.model = "test-model"
