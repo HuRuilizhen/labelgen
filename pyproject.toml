@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "paralabelgen"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Python library for generating discrete paragraph labels from concept extraction, graph communities, and interpretable assignment rules."
 readme = "README.md"
 license = { text = "MIT" }
@@ -30,6 +30,12 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+
+[project.urls]
+Homepage = "https://github.com/HuRuilizhen/labelgen"
+Repository = "https://github.com/HuRuilizhen/labelgen"
+Issues = "https://github.com/HuRuilizhen/labelgen/issues"
+
 [project.optional-dependencies]
 dev = [
   "build>=1.2.0",
