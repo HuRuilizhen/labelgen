@@ -305,7 +305,97 @@ class LabelGenerator:
             not generator._fitted_concepts or not generator._fitted_communities
         ):
             raise TypeError("Serialized fitted generator must include concepts and communities.")
+        generator._migrate_fitted_state()
         return generator
+
+    def _migrate_fitted_state(self) -> None:
+        """Normalize loaded fitted state to the active concept ID scheme."""
+
+        if not self.config.extraction.merge_concepts_by_normalized_text:
+            return
+
+        canonical_id_by_normalized: dict[str, str] = {}
+        legacy_to_canonical: dict[str, str] = {}
+        migrated_concepts: list[Concept] = []
+        for concept in self._fitted_concepts:
+            canonical_id = canonical_id_by_normalized.setdefault(
+                concept.normalized,
+                self._canonical_concept_id(concept.normalized),
+            )
+            legacy_to_canonical[concept.id] = canonical_id
+            migrated_concepts.append(
+                Concept(
+                    id=canonical_id,
+                    surface=concept.surface,
+                    normalized=concept.normalized,
+                    kind=concept.kind,
+                    document_frequency=concept.document_frequency,
+                )
+            )
+
+        deduplicated_concepts: dict[str, Concept] = {}
+        for concept in migrated_concepts:
+            existing = deduplicated_concepts.get(concept.id)
+            if existing is None:
+                deduplicated_concepts[concept.id] = concept
+                continue
+            deduplicated_concepts[concept.id] = self._merge_concepts(existing, concept)
+        self._fitted_concepts = sorted(
+            deduplicated_concepts.values(),
+            key=lambda concept: concept.id,
+        )
+
+        migrated_communities: list[Community] = []
+        for community in self._fitted_communities:
+            concept_ids = sorted(
+                {
+                    legacy_to_canonical.get(concept_id, concept_id)
+                    for concept_id in community.concept_ids
+                }
+            )
+            migrated_communities.append(
+                Community(
+                    id=community.id,
+                    concept_ids=concept_ids,
+                    display_name=community.display_name,
+                    representative_concepts=community.representative_concepts,
+                    size=len(concept_ids),
+                )
+            )
+        self._fitted_communities = migrated_communities
+
+    def _canonical_concept_id(self, normalized: str) -> str:
+        """Build the canonical concept ID used by the active pipeline."""
+
+        probe = canonicalize_mentions(
+            [
+                ConceptMention(
+                    paragraph_id="__migration__",
+                    concept_id=f"legacy:{normalized}",
+                    surface=normalized,
+                    normalized=normalized,
+                    kind="noun_phrase",
+                )
+            ],
+            self.config.extraction,
+        )[0]
+        return probe.concept_id
+
+    @staticmethod
+    def _merge_concepts(left: Concept, right: Concept) -> Concept:
+        """Merge duplicated loaded concepts with the same canonical identifier."""
+
+        left_df = left.document_frequency or 0
+        right_df = right.document_frequency or 0
+        preferred = left if left_df >= right_df else right
+        merged_document_frequency = max(left_df, right_df) or None
+        return Concept(
+            id=preferred.id,
+            surface=preferred.surface,
+            normalized=preferred.normalized,
+            kind=preferred.kind,
+            document_frequency=merged_document_frequency,
+        )
 
     def _select_retained_concept_ids(
         self,

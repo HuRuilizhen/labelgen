@@ -1,5 +1,6 @@
 """Tests for result and config serialization."""
 
+import json
 from pathlib import Path
 
 from labelgen import LabelGenerator, LabelGeneratorConfig, dump_result, load_result
@@ -77,3 +78,71 @@ def test_generator_save_and_load_preserve_fitted_state(tmp_path: Path) -> None:
     assert result.mentions
     assert result.concepts
     assert result.paragraph_labels[0].label_ids
+
+
+def test_load_migrates_pre_0_1_1_fitted_state_ids(tmp_path: Path) -> None:
+    serialized_generator = {
+        "config": {
+            "random_seed": 42,
+            "use_nlp_extractor": False,
+            "use_graph_community_detection": False,
+            "extraction": {
+                "lowercase": True,
+                "min_concept_length": 2,
+                "min_document_frequency": 1,
+                "max_concept_df_ratio": 1.0,
+                "max_phrase_length": 4,
+                "reject_stopword_concepts": True,
+                "reject_url_like_concepts": True,
+                "reject_generic_shell_concepts": True,
+                "clean_technical_documents": True,
+                "strip_urls": True,
+                "suppress_section_headers": True,
+                "spacy_model_name": "en_core_web_sm",
+                "allowed_kinds": ["entity", "noun_phrase"],
+            },
+            "graph": {"min_edge_weight": 1},
+            "community_detection": {"resolution": 1.0, "random_seed": 42},
+            "label_assignment": {
+                "max_labels_per_paragraph": 3,
+                "min_evidence_concepts": 1,
+                "min_label_support": 1.0,
+            },
+            "verbalization": {"top_k_label_terms": 5, "max_display_terms": 3},
+        },
+        "is_fitted": True,
+        "fitted_concepts": [
+            {
+                "id": "noun_phrase:openai",
+                "surface": "OpenAI",
+                "normalized": "openai",
+                "kind": "noun_phrase",
+                "document_frequency": 2,
+            },
+            {
+                "id": "entity:language models",
+                "surface": "language models",
+                "normalized": "language models",
+                "kind": "entity",
+                "document_frequency": 2,
+            },
+        ],
+        "fitted_communities": [
+            {
+                "id": "community-0",
+                "concept_ids": ["noun_phrase:openai", "entity:language models"],
+                "display_name": "openai / language models",
+                "representative_concepts": ["openai", "language models"],
+                "size": 2,
+            }
+        ],
+    }
+    output_path = tmp_path / "legacy-generator.json"
+    output_path.write_text(json.dumps(serialized_generator), encoding="utf-8")
+
+    loaded = LabelGenerator.load(output_path)
+    result = loaded.transform(["OpenAI uses language models."])
+
+    assert result.mentions
+    assert result.concepts
+    assert result.paragraph_labels[0].label_ids == ["community-0"]

@@ -88,8 +88,9 @@ def _community_quality_weight(community: Community) -> float:
     elif noisy_count > 0:
         weight *= 0.6
 
-    if community.size >= 100:
-        weight *= 0.7
-    elif community.size >= 60:
-        weight *= 0.85
+    if noisy_count > 0:
+        if community.size >= 100:
+            weight *= 0.7
+        elif community.size >= 60:
+            weight *= 0.85
     return weight
