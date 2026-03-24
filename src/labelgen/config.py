@@ -16,6 +16,18 @@ class ExtractionConfig:
             before a concept is treated as too common.
         max_phrase_length: Maximum heuristic phrase length used by the fallback extractor.
         reject_stopword_concepts: Drop concepts made entirely of stopwords.
+        reject_url_like_concepts: Drop concepts dominated by URLs and support
+            links.
+        reject_generic_shell_concepts: Drop generic support-document phrases and
+            pronoun-like shells that are not useful labels.
+        merge_concepts_by_normalized_text: Merge mentions with identical
+            normalized text even when extracted with different kinds.
+        clean_technical_documents: Apply support-document cleanup before concept
+            extraction.
+        strip_urls: Remove raw URLs from cleaned paragraph text when technical
+            document cleanup is enabled.
+        suppress_section_headers: Remove common support-note section headers when
+            technical document cleanup is enabled.
         spacy_model_name: Installed spaCy pipeline name used by the default NLP
             extractor. `en_core_web_sm` is the recommended default, but callers
             can point this to another compatible installed pipeline.
@@ -28,6 +40,12 @@ class ExtractionConfig:
     max_concept_df_ratio: float = 1.0
     max_phrase_length: int = 4
     reject_stopword_concepts: bool = True
+    reject_url_like_concepts: bool = True
+    reject_generic_shell_concepts: bool = True
+    merge_concepts_by_normalized_text: bool = True
+    clean_technical_documents: bool = True
+    strip_urls: bool = True
+    suppress_section_headers: bool = True
     spacy_model_name: str = "en_core_web_sm"
     allowed_kinds: tuple[str, ...] = ("entity", "noun_phrase")
 
