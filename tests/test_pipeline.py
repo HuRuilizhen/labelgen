@@ -1,8 +1,12 @@
 """Smoke tests for the main pipeline."""
 
+import importlib
+from types import SimpleNamespace
+
 import pytest
 
 from labelgen import LabelGenerator, LabelGeneratorConfig
+from labelgen.extraction.spacy_extractor import SpacyConceptExtractor
 
 
 def test_fit_transform_returns_structured_result() -> None:
@@ -119,8 +123,47 @@ def test_max_concept_df_ratio_filters_corpus_wide_concepts() -> None:
     assert all((concept.document_frequency or 0) / 3 <= 0.5 for concept in result.concepts)
 
 
-def test_default_nlp_extractor_requires_installed_spacy_model() -> None:
+def test_default_nlp_extractor_requires_installed_spacy_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_import_module = importlib.import_module
+
+    def _fake_import_module(name: str, package: str | None = None) -> object:
+        if name == "spacy":
+            return SimpleNamespace(load=_fake_load)
+        return real_import_module(name, package)
+
+    def _fake_load(name: str) -> object:
+        raise OSError(f"missing model: {name}")
+
+    monkeypatch.setattr(
+        "labelgen.extraction.spacy_extractor.importlib.import_module",
+        _fake_import_module,
+    )
     generator = LabelGenerator(LabelGeneratorConfig())
 
     with pytest.raises(RuntimeError, match="spaCy model 'en_core_web_sm' is required"):
         generator.fit_transform(["OpenAI builds language models."])
+
+
+def test_default_nlp_extractor_wraps_model_load_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_import_module = importlib.import_module
+
+    def _fake_import_module(name: str, package: str | None = None) -> object:
+        if name == "spacy":
+            return SimpleNamespace(load=_fake_load)
+        return real_import_module(name, package)
+
+    def _fake_load(name: str) -> object:
+        raise ValueError(f"broken model: {name}")
+
+    monkeypatch.setattr(
+        "labelgen.extraction.spacy_extractor.importlib.import_module",
+        _fake_import_module,
+    )
+    extractor = SpacyConceptExtractor(LabelGeneratorConfig().extraction)
+
+    with pytest.raises(RuntimeError, match="could not be loaded"):
+        extractor.extract([])

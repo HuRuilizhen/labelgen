@@ -43,10 +43,13 @@ class SpacyConceptExtractor(ConceptExtractor):
                 "Disable NLP extraction in LabelGeneratorConfig to use the heuristic extractor."
             ) from error
 
+        load = getattr(spacy, "load", None)
+        if not callable(load):
+            raise RuntimeError("spaCy.load is unavailable in the installed spaCy package.")
+
+        self._rebuild_spacy_config_schema()
+
         try:
-            load = getattr(spacy, "load", None)
-            if not callable(load):
-                raise RuntimeError("spaCy.load is unavailable in the installed spaCy package.")
             return load(self._config.spacy_model_name)
         except OSError as error:
             raise RuntimeError(
@@ -55,6 +58,26 @@ class SpacyConceptExtractor(ConceptExtractor):
                 f"`python -m spacy download {self._config.spacy_model_name}` or set "
                 "`use_nlp_extractor=False` to use the heuristic extractor."
             ) from error
+        except Exception as error:
+            raise RuntimeError(
+                f"spaCy model '{self._config.spacy_model_name}' could not be loaded. "
+                "Verify that the installed spaCy package and model are compatible, or set "
+                "`use_nlp_extractor=False` to use the heuristic extractor."
+            ) from error
+
+    def _rebuild_spacy_config_schema(self) -> None:
+        """Work around spaCy schema initialization issues under pydantic v2."""
+
+        try:
+            language_module = importlib.import_module("spacy.language")
+            schemas = importlib.import_module("spacy.schemas")
+        except ImportError:
+            return
+
+        config_schema = getattr(schemas, "ConfigSchemaNlp", None)
+        rebuild = getattr(config_schema, "model_rebuild", None)
+        if callable(rebuild):
+            rebuild(_types_namespace={"Language": getattr(language_module, "Language", None)})
 
     def _extract_with_spacy(self, paragraphs: list[Paragraph]) -> list[ConceptMention]:
         """Extract mentions with spaCy entities and noun chunks."""
