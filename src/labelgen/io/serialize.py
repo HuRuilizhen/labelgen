@@ -61,9 +61,8 @@ def config_from_dict(data: dict[str, Any]) -> LabelGeneratorConfig:
 
     extraction_data = _as_string_key_dict(data.get("extraction"))
     llm_data = _as_string_key_dict(extraction_data.get("llm"))
-    if llm_data:
-        extraction_data = dict(extraction_data)
-        extraction_data["llm"] = LLMExtractionConfig(**llm_data)
+    extraction_data = dict(extraction_data)
+    extraction_data["llm"] = LLMExtractionConfig(**llm_data)
     extraction = ExtractionConfig(**extraction_data)
     graph = GraphConfig(**_as_string_key_dict(data.get("graph")))
     community_detection = CommunityDetectionConfig(

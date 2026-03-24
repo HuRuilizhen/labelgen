@@ -152,3 +152,37 @@ def test_load_migrates_pre_0_1_1_fitted_state_ids(tmp_path: Path) -> None:
     assert result.mentions
     assert result.concepts
     assert result.paragraph_labels[0].label_ids == ["community-0"]
+
+
+def test_config_from_dict_coerces_empty_llm_config() -> None:
+    from labelgen.io.serialize import config_from_dict
+
+    loaded = config_from_dict(
+        {
+            "extractor_mode": "llm",
+            "use_graph_community_detection": False,
+            "extraction": {
+                "llm": {},
+            },
+        }
+    )
+
+    assert loaded.extraction.llm.model == ""
+    assert loaded.extraction.llm.provider == "openai"
+
+
+def test_config_from_dict_coerces_null_llm_config() -> None:
+    from labelgen.io.serialize import config_from_dict
+
+    loaded = config_from_dict(
+        {
+            "extractor_mode": "llm",
+            "use_graph_community_detection": False,
+            "extraction": {
+                "llm": None,
+            },
+        }
+    )
+
+    assert loaded.extraction.llm.model == ""
+    assert loaded.extraction.llm.provider == "openai"
