@@ -94,6 +94,31 @@ def test_llm_extractor_uses_disk_cache(tmp_path: Path) -> None:
     assert client.call_count == 1
 
 
+def test_llm_cache_key_includes_max_concepts_per_paragraph(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_dir = str(tmp_path / "cache")
+    config.extraction.llm.max_concepts_per_paragraph = 1
+    first_client = FakeLLMProviderClient({"paragraphs": [["OpenAI", "developer tooling"]]})
+    extractor = LLMConceptExtractor(config.extraction, client=first_client)
+    paragraphs = [Paragraph(id="p1", text="OpenAI builds developer tooling.")]
+
+    first_mentions = extractor.extract(paragraphs)
+
+    config.extraction.llm.max_concepts_per_paragraph = 2
+    second_client = FakeLLMProviderClient({"paragraphs": [["OpenAI", "developer tooling"]]})
+    second_extractor = LLMConceptExtractor(config.extraction, client=second_client)
+    second_mentions = second_extractor.extract(paragraphs)
+
+    assert [mention.normalized for mention in first_mentions] == ["openai"]
+    assert [mention.normalized for mention in second_mentions] == [
+        "openai",
+        "developer tooling",
+    ]
+    assert first_client.call_count == 1
+    assert second_client.call_count == 1
+
+
 def test_label_generator_uses_llm_extractor_mode(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

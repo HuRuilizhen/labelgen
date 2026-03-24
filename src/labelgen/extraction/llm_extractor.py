@@ -197,8 +197,10 @@ class LLMConceptExtractor(ConceptExtractor):
             "provider": self._config.llm.provider,
             "model": self._config.llm.model,
             "prompt_version": self._config.llm.prompt_version,
+            "prompt_template": self._config.llm.prompt_template,
             "temperature": self._config.llm.temperature,
             "max_output_tokens": self._config.llm.max_output_tokens,
+            "max_concepts_per_paragraph": self._config.llm.max_concepts_per_paragraph,
             "paragraphs": [paragraph.text for paragraph in paragraphs],
         }
         digest = hashlib.sha256(json.dumps(key_payload, sort_keys=True).encode()).hexdigest()
