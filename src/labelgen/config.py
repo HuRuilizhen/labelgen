@@ -26,6 +26,8 @@ class LLMExtractionConfig:
         cache_enabled: Whether to cache parsed paragraph concepts on disk.
         cache_dir: Cache directory for parsed LLM extraction outputs.
         prompt_version: Prompt version identifier that participates in cache keys.
+        prompt_template: Optional user prompt template override. When unset, the
+            built-in release prompt is used.
     """
 
     provider: LLMProviderName = "openai"
@@ -42,6 +44,7 @@ class LLMExtractionConfig:
     cache_enabled: bool = True
     cache_dir: str | None = ".labelgen-cache"
     prompt_version: str = "v1"
+    prompt_template: str | None = None
 
 
 @dataclass(slots=True)

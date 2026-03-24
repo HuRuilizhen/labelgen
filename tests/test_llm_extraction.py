@@ -19,6 +19,7 @@ class FakeLLMProviderClient(LLMProviderClient):
     def __init__(self, payload: dict[str, object]) -> None:
         self.payload = payload
         self.call_count = 0
+        self.messages: list[dict[str, str]] = []
 
     def complete_chat(
         self,
@@ -26,7 +27,7 @@ class FakeLLMProviderClient(LLMProviderClient):
         messages: list[dict[str, str]],
         config: object,
     ) -> str:
-        del messages
+        self.messages = messages
         del config
         self.call_count += 1
         return json.dumps(self.payload)
@@ -53,6 +54,25 @@ def test_llm_extractor_returns_llm_concept_mentions(tmp_path: Path) -> None:
         "developer tooling",
     ]
     assert all(mention.kind == "llm_concept" for mention in mentions)
+
+
+def test_llm_extractor_uses_custom_prompt_template(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_dir = str(tmp_path)
+    config.extraction.llm.prompt_template = (
+        "Extract concepts.\n"
+        "Cap: {max_concepts_per_paragraph}\n"
+        "{paragraphs_block}"
+    )
+    client = FakeLLMProviderClient({"paragraphs": [["OpenAI platform"]]})
+    extractor = LLMConceptExtractor(config.extraction, client=client)
+
+    extractor.extract([Paragraph(id="p1", text="OpenAI builds developer tooling.")])
+
+    assert len(client.messages) == 2
+    assert "Cap: 12" in client.messages[1]["content"]
+    assert "Paragraph 0: OpenAI builds developer tooling." in client.messages[1]["content"]
 
 
 def test_llm_extractor_uses_disk_cache(tmp_path: Path) -> None:

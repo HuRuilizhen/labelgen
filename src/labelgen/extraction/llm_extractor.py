@@ -13,6 +13,21 @@ from labelgen.extraction.llm_provider import LLMProviderClient, build_provider_c
 from labelgen.extraction.normalization import normalize_surface
 from labelgen.types import ConceptMention, Paragraph
 
+_DEFAULT_PROMPT_TEMPLATE = "\n".join(
+    [
+        "Return a JSON object with this exact schema:",
+        '{{"paragraphs": [["concept 1", "concept 2"], ["concept 3"]]}}',
+        "Rules:",
+        "- Extract concise technical concepts suitable for paragraph labeling.",
+        "- Prefer products, components, errors, operations, entities, and domain nouns.",
+        "- Exclude URLs, generic support boilerplate, pronouns, and section headers.",
+        "- Preserve the original concept wording when useful.",
+        "- Return at most {max_concepts_per_paragraph} concepts per paragraph.",
+        "",
+        "{paragraphs_block}",
+    ]
+)
+
 
 class LLMConceptExtractor(ConceptExtractor):
     """Concept extractor backed by a provider LLM."""
@@ -86,22 +101,18 @@ class LLMConceptExtractor(ConceptExtractor):
             "You extract salient technical concepts from paragraphs for downstream "
             "topic labeling. Return JSON only."
         )
-        lines = [
-            "Return a JSON object with this exact schema:",
-            '{"paragraphs": [{"paragraph_index": 0, "concepts": ["concept 1", "concept 2"]}]}',
-            "Rules:",
-            "- Extract concise technical concepts suitable for paragraph labeling.",
-            "- Prefer products, components, errors, operations, entities, and domain nouns.",
-            "- Exclude URLs, generic support boilerplate, pronouns, and section headers.",
-            "- Preserve the original concept wording when useful.",
-            "- Return at most "
-            f"{self._config.llm.max_concepts_per_paragraph} concepts per paragraph.",
+        prompt_template = self._config.llm.prompt_template or _DEFAULT_PROMPT_TEMPLATE
+        paragraph_lines = [
+            f"Paragraph {index}: {paragraph.text}"
+            for index, paragraph in enumerate(paragraphs)
         ]
-        for index, paragraph in enumerate(paragraphs):
-            lines.append(f"Paragraph {index}: {paragraph.text}")
+        user_message = prompt_template.format(
+            max_concepts_per_paragraph=self._config.llm.max_concepts_per_paragraph,
+            paragraphs_block="\n".join(paragraph_lines),
+        )
         return [
             {"role": "system", "content": system_message},
-            {"role": "user", "content": "\n".join(lines)},
+            {"role": "user", "content": user_message},
         ]
 
     def _parse_provider_output(self, content: str, paragraph_count: int) -> list[list[str]]:
