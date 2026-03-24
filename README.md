@@ -33,7 +33,7 @@ config = LabelGeneratorConfig(
     use_nlp_extractor=False,
     use_graph_community_detection=False,
 )
-generator = LabelGenerator(config)
+generator = LabelGenerator(LabelGeneratorConfig())
 result = generator.fit_transform(paragraphs)
 
 print("Concepts:")
@@ -45,9 +45,8 @@ for assignment in result.paragraph_labels:
     print(assignment.paragraph_id, assignment.label_ids, assignment.label_scores)
 ```
 
-This quick start uses the deterministic fallback pipeline so it can run without
-additional runtime model setup. The default public pipeline still uses spaCy
-extraction and Leiden community detection.
+The default public pipeline uses spaCy extraction and Leiden community
+detection. Install the recommended spaCy model before running the example.
 
 ## Public API
 

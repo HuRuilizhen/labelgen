@@ -4,18 +4,14 @@ from labelgen import LabelGenerator, LabelGeneratorConfig
 
 
 def main() -> None:
-    """Run a minimal fit-transform workflow with deterministic fallback settings."""
+    """Run a minimal fit-transform workflow with the default pipeline."""
 
     paragraphs = [
         "OpenAI builds language models for developers.",
         "Developers use language models in production systems.",
         "Production systems need monitoring, evaluation, and deployment tooling.",
     ]
-    config = LabelGeneratorConfig(
-        use_nlp_extractor=False,
-        use_graph_community_detection=False,
-    )
-    generator = LabelGenerator(config)
+    generator = LabelGenerator(LabelGeneratorConfig())
     result = generator.fit_transform(paragraphs)
 
     print("Concepts:")

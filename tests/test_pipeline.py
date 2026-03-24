@@ -1,5 +1,6 @@
 """Smoke tests for the main pipeline."""
 
+import importlib
 from types import SimpleNamespace
 
 import pytest
@@ -125,9 +126,12 @@ def test_max_concept_df_ratio_filters_corpus_wide_concepts() -> None:
 def test_default_nlp_extractor_requires_installed_spacy_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def _fake_import_module(name: str) -> object:
-        assert name == "spacy"
-        return SimpleNamespace(load=_fake_load)
+    real_import_module = importlib.import_module
+
+    def _fake_import_module(name: str, package: str | None = None) -> object:
+        if name == "spacy":
+            return SimpleNamespace(load=_fake_load)
+        return real_import_module(name, package)
 
     def _fake_load(name: str) -> object:
         raise OSError(f"missing model: {name}")
@@ -145,9 +149,12 @@ def test_default_nlp_extractor_requires_installed_spacy_model(
 def test_default_nlp_extractor_wraps_model_load_failures(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def _fake_import_module(name: str) -> object:
-        assert name == "spacy"
-        return SimpleNamespace(load=_fake_load)
+    real_import_module = importlib.import_module
+
+    def _fake_import_module(name: str, package: str | None = None) -> object:
+        if name == "spacy":
+            return SimpleNamespace(load=_fake_load)
+        return real_import_module(name, package)
 
     def _fake_load(name: str) -> object:
         raise ValueError(f"broken model: {name}")
