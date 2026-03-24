@@ -102,6 +102,24 @@ def canonicalize_mentions(
     return canonicalized
 
 
+def is_url_like_concept_text(text: str) -> bool:
+    """Return whether concept text is dominated by URLs or support-link syntax."""
+
+    return _is_url_like(text)
+
+
+def is_generic_shell_concept_text(text: str) -> bool:
+    """Return whether concept text is a generic support-document shell."""
+
+    return _is_generic_shell(text)
+
+
+def is_noisy_concept_text(text: str) -> bool:
+    """Return whether concept text should be treated as low-quality label text."""
+
+    return _is_url_like(text) or _is_generic_shell(text)
+
+
 def _is_all_stopwords(text: str) -> bool:
     """Return whether all tokens in a normalized concept are stopwords."""
 

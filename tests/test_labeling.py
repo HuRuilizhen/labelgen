@@ -140,3 +140,58 @@ def test_assigner_respects_min_label_support() -> None:
     result = assign_paragraph_labels(paragraphs, mentions, communities, config)
 
     assert result[0].label_ids == []
+
+
+def test_assigner_downweights_oversized_noisy_communities() -> None:
+    paragraphs = [Paragraph(id="p1", text="Alpha beta gamma")]
+    communities = [
+        Community(
+            id="generic-community",
+            concept_ids=["c1", "c2"],
+            display_name="problem summary / www.ibm.com/support / you",
+            representative_concepts=["problem summary", "www.ibm.com/support", "you"],
+            size=150,
+        ),
+        Community(
+            id="topic-community",
+            concept_ids=["c3", "c4"],
+            display_name="internal compiler optimization / inlining",
+            representative_concepts=["internal compiler optimization", "inlining"],
+            size=8,
+        ),
+    ]
+    mentions = [
+        ConceptMention(
+            paragraph_id="p1",
+            concept_id="c1",
+            surface="problem summary",
+            normalized="problem summary",
+            kind="noun_phrase",
+        ),
+        ConceptMention(
+            paragraph_id="p1",
+            concept_id="c2",
+            surface="www.ibm.com/support",
+            normalized="www.ibm.com/support",
+            kind="noun_phrase",
+        ),
+        ConceptMention(
+            paragraph_id="p1",
+            concept_id="c3",
+            surface="internal compiler optimization",
+            normalized="internal compiler optimization",
+            kind="noun_phrase",
+        ),
+        ConceptMention(
+            paragraph_id="p1",
+            concept_id="c4",
+            surface="inlining",
+            normalized="inlining",
+            kind="noun_phrase",
+        ),
+    ]
+
+    result = assign_paragraph_labels(paragraphs, mentions, communities, LabelAssignmentConfig())
+
+    assert result[0].label_ids[0] == "topic-community"
+    assert result[0].label_scores["topic-community"] > result[0].label_scores["generic-community"]
