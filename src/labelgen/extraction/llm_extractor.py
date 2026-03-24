@@ -123,34 +123,33 @@ class LLMConceptExtractor(ConceptExtractor):
         if not isinstance(paragraphs, list):
             raise RuntimeError("LLM extraction output must contain a paragraphs list.")
 
-        concept_lists: list[list[str]] = [[] for _ in range(paragraph_count)]
-        for item in cast(list[object], paragraphs):
-            if not isinstance(item, dict):
-                continue
-            item_dict = cast(dict[str, Any], item)
-            paragraph_index = item_dict.get("paragraph_index")
-            concepts = item_dict.get("concepts")
-            if not isinstance(paragraph_index, int):
-                continue
-            if paragraph_index < 0 or paragraph_index >= paragraph_count:
-                continue
-            if not isinstance(concepts, list):
-                continue
+        raw_lists = cast(list[object], paragraphs)
+        if len(raw_lists) != paragraph_count:
+            raise RuntimeError("LLM extraction output must align with the input batch size.")
 
-            seen: set[str] = set()
-            parsed_concepts: list[str] = []
-            for concept in cast(list[object], concepts):
-                if not isinstance(concept, str):
-                    continue
-                normalized = normalize_surface(concept, lowercase=self._config.lowercase)
-                if not normalized or normalized in seen:
-                    continue
-                seen.add(normalized)
-                parsed_concepts.append(concept.strip())
-                if len(parsed_concepts) >= self._config.llm.max_concepts_per_paragraph:
-                    break
-            concept_lists[paragraph_index] = parsed_concepts
+        concept_lists: list[list[str]] = []
+        for item in raw_lists:
+            if not isinstance(item, list):
+                raise RuntimeError("Each LLM extraction paragraph entry must be a list of strings.")
+            concept_lists.append(self._parse_concept_list(cast(list[object], item)))
         return concept_lists
+
+    def _parse_concept_list(self, values: list[object]) -> list[str]:
+        """Parse one ordered concept list from a provider response."""
+
+        seen: set[str] = set()
+        parsed_concepts: list[str] = []
+        for concept in values:
+            if not isinstance(concept, str):
+                continue
+            normalized = normalize_surface(concept, lowercase=self._config.lowercase)
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            parsed_concepts.append(concept.strip())
+            if len(parsed_concepts) >= self._config.llm.max_concepts_per_paragraph:
+                break
+        return parsed_concepts
 
     def _load_json_object(self, content: str) -> dict[str, Any]:
         """Parse JSON or extract a JSON object from a textual provider response."""

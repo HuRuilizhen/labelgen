@@ -39,9 +39,7 @@ def test_llm_extractor_returns_llm_concept_mentions(tmp_path: Path) -> None:
     config.extraction.llm.cache_dir = str(tmp_path)
     client = FakeLLMProviderClient(
         {
-            "paragraphs": [
-                {"paragraph_index": 0, "concepts": ["OpenAI platform", "developer tooling"]},
-            ]
+            "paragraphs": [["OpenAI platform", "developer tooling"]]
         }
     )
     extractor = LLMConceptExtractor(config.extraction, client=client)
@@ -82,7 +80,7 @@ def test_llm_extractor_uses_disk_cache(tmp_path: Path) -> None:
     client = FakeLLMProviderClient(
         {
             "paragraphs": [
-                {"paragraph_index": 0, "concepts": ["OpenAI platform"]},
+                ["OpenAI platform"],
             ]
         }
     )
@@ -103,8 +101,8 @@ def test_label_generator_uses_llm_extractor_mode(
     client = FakeLLMProviderClient(
         {
             "paragraphs": [
-                {"paragraph_index": 0, "concepts": ["OpenAI", "language models"]},
-                {"paragraph_index": 1, "concepts": ["language models", "production systems"]},
+                ["OpenAI", "language models"],
+                ["language models", "production systems"],
             ]
         }
     )
@@ -146,3 +144,20 @@ def test_llm_mode_requires_configured_model() -> None:
 
     with pytest.raises(RuntimeError, match="requires a configured model"):
         generator.fit_transform(["OpenAI builds language models."])
+
+
+def test_llm_extractor_requires_positional_paragraph_lists(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_dir = str(tmp_path)
+    client = FakeLLMProviderClient(
+        {
+            "paragraphs": [
+                {"paragraph_index": 0, "concepts": ["OpenAI platform"]},
+            ]
+        }
+    )
+    extractor = LLMConceptExtractor(config.extraction, client=client)
+
+    with pytest.raises(RuntimeError, match="must be a list of strings"):
+        extractor.extract([Paragraph(id="p1", text="OpenAI builds platforms.")])
