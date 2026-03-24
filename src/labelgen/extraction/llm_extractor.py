@@ -62,7 +62,7 @@ class LLMConceptExtractor(ConceptExtractor):
         for batch_index, batch in enumerate(
             self._iter_batches(paragraphs, self._config.llm.batch_size)
         ):
-            payload = self._extract_batch_concepts(batch)
+            payload = self._extract_batch_concepts(batch, batch_index=batch_index)
             batch_mentions: list[ConceptMention] = []
             for paragraph, concepts in zip(batch, payload.concept_lists, strict=True):
                 batch_mentions.extend(self._build_mentions(paragraph, concepts))
@@ -97,7 +97,12 @@ class LLMConceptExtractor(ConceptExtractor):
             for index in range(0, len(paragraphs), batch_size)
         ]
 
-    def _extract_batch_concepts(self, paragraphs: list[Paragraph]) -> _BatchExtractionPayload:
+    def _extract_batch_concepts(
+        self,
+        paragraphs: list[Paragraph],
+        *,
+        batch_index: int,
+    ) -> _BatchExtractionPayload:
         """Extract concept strings for one paragraph batch."""
 
         messages = self._build_messages(paragraphs)
@@ -116,7 +121,18 @@ class LLMConceptExtractor(ConceptExtractor):
             messages=messages,
             config=self._config.llm,
         )
-        concept_lists = self._parse_provider_output(content, len(paragraphs))
+        try:
+            concept_lists = self._parse_provider_output(content, len(paragraphs))
+        except RuntimeError as error:
+            self._write_failure_artifact(
+                batch_index=batch_index,
+                paragraphs=paragraphs,
+                cache_digest=cache_digest,
+                messages=messages,
+                raw_response_text=content,
+                error_message=str(error),
+            )
+            raise
         if cache_path is not None:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache_path.write_text(
@@ -312,3 +328,39 @@ class LLMConceptExtractor(ConceptExtractor):
         if self._config.llm.artifact_dir is None:
             return None
         return Path(self._config.llm.artifact_dir)
+
+    def _write_failure_artifact(
+        self,
+        *,
+        batch_index: int,
+        paragraphs: list[Paragraph],
+        cache_digest: str | None,
+        messages: list[dict[str, str]],
+        raw_response_text: str,
+        error_message: str,
+    ) -> None:
+        """Write a structured failure artifact when parsing fails."""
+
+        artifact_dir = self._artifact_dir()
+        if artifact_dir is None:
+            return
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        cache_suffix = cache_digest[:12] if cache_digest is not None else "nocache"
+        artifact_path = (
+            artifact_dir / f"{timestamp}-batch{batch_index:03d}-{cache_suffix}-error.json"
+        )
+        artifact_payload = {
+            "artifact_type": "llm_extraction_batch_error",
+            "created_at_utc": datetime.now(UTC).isoformat(),
+            "provider": self._config.llm.provider,
+            "model": self._config.llm.model,
+            "prompt_version": self._config.llm.prompt_version,
+            "prompt_template": self._config.llm.prompt_template,
+            "cache_digest": cache_digest,
+            "messages": messages,
+            "paragraphs": [asdict(paragraph) for paragraph in paragraphs],
+            "raw_response_text": raw_response_text,
+            "error_message": error_message,
+        }
+        artifact_path.write_text(json.dumps(artifact_payload, indent=2), encoding="utf-8")
