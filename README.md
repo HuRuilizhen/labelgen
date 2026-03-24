@@ -29,7 +29,11 @@ paragraphs = [
     "Developers use language models in production systems.",
 ]
 
-generator = LabelGenerator(LabelGeneratorConfig())
+config = LabelGeneratorConfig(
+    use_nlp_extractor=False,
+    use_graph_community_detection=False,
+)
+generator = LabelGenerator(config)
 result = generator.fit_transform(paragraphs)
 
 print("Concepts:")
@@ -40,6 +44,10 @@ print("Labels:")
 for assignment in result.paragraph_labels:
     print(assignment.paragraph_id, assignment.label_ids, assignment.label_scores)
 ```
+
+This quick start uses the deterministic fallback pipeline so it can run without
+additional runtime model setup. The default public pipeline still uses spaCy
+extraction and Leiden community detection.
 
 ## Public API
 

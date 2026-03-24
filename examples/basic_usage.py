@@ -1,21 +1,21 @@
-"""Basic end-to-end usage example for paralabelgen.
-
-This example uses the default spaCy-backed pipeline and therefore requires the
-configured spaCy model to be installed.
-"""
+"""Basic end-to-end usage example for paralabelgen."""
 
 from labelgen import LabelGenerator, LabelGeneratorConfig
 
 
 def main() -> None:
-    """Run a minimal fit-transform workflow with the default pipeline."""
+    """Run a minimal fit-transform workflow with deterministic fallback settings."""
 
     paragraphs = [
         "OpenAI builds language models for developers.",
         "Developers use language models in production systems.",
         "Production systems need monitoring, evaluation, and deployment tooling.",
     ]
-    generator = LabelGenerator(LabelGeneratorConfig())
+    config = LabelGeneratorConfig(
+        use_nlp_extractor=False,
+        use_graph_community_detection=False,
+    )
+    generator = LabelGenerator(config)
     result = generator.fit_transform(paragraphs)
 
     print("Concepts:")
@@ -27,7 +27,9 @@ def main() -> None:
 
     print("\nParagraph Labels:")
     for labels in result.paragraph_labels:
-        print(f"- {labels.paragraph_id}: {labels.label_ids} | scores={labels.label_scores}")
+        print(
+            f"- {labels.paragraph_id}: {labels.label_ids} | scores={labels.label_scores}"
+        )
 
 
 if __name__ == "__main__":

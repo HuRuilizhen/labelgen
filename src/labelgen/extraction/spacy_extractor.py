@@ -43,16 +43,23 @@ class SpacyConceptExtractor(ConceptExtractor):
                 "Disable NLP extraction in LabelGeneratorConfig to use the heuristic extractor."
             ) from error
 
+        load = getattr(spacy, "load", None)
+        if not callable(load):
+            raise RuntimeError("spaCy.load is unavailable in the installed spaCy package.")
+
         try:
-            load = getattr(spacy, "load", None)
-            if not callable(load):
-                raise RuntimeError("spaCy.load is unavailable in the installed spaCy package.")
             return load(self._config.spacy_model_name)
         except OSError as error:
             raise RuntimeError(
                 f"spaCy model '{self._config.spacy_model_name}' is required for the default "
                 "NLP extractor. Install it with "
                 f"`python -m spacy download {self._config.spacy_model_name}` or set "
+                "`use_nlp_extractor=False` to use the heuristic extractor."
+            ) from error
+        except Exception as error:
+            raise RuntimeError(
+                f"spaCy model '{self._config.spacy_model_name}' could not be loaded. "
+                "Verify that the installed spaCy package and model are compatible, or set "
                 "`use_nlp_extractor=False` to use the heuristic extractor."
             ) from error
 
