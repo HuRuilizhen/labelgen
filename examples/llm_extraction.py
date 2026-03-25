@@ -43,6 +43,7 @@ def main() -> None:
     config.extraction.llm.cache_dir = ".labelgen-cache"
     config.extraction.llm.batch_size = 2
     config.extraction.llm.max_concepts_per_paragraph = 8
+    config.extraction.llm.record_extraction_artifacts = False
 
     paragraphs = [
         "OpenAI builds language models and developer APIs for production systems.",
@@ -55,6 +56,8 @@ def main() -> None:
 
     print(f"Extractor: {generator.extractor_name}")
     print(f"Detector: {generator.detector_name}")
+    print(f"Provider: {provider}")
+    print(f"Model: {model}")
     print("Concepts:")
     for concept in result.concepts:
         print(

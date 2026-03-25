@@ -9,7 +9,7 @@ def main() -> None:
     """Fit, save, load, and reuse a generator."""
 
     config = LabelGeneratorConfig(
-        use_nlp_extractor=False,
+        extractor_mode="heuristic",
         use_graph_community_detection=False,
     )
     generator = LabelGenerator(config)
