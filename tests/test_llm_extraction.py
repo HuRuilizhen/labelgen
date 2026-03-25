@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -176,6 +177,33 @@ def test_llm_extractor_can_record_structured_artifacts(tmp_path: Path) -> None:
     ]
 
 
+def test_llm_extractor_artifacts_are_json_safe(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_enabled = False
+    config.extraction.llm.record_extraction_artifacts = True
+    config.extraction.llm.artifact_dir = str(tmp_path / "artifacts")
+    client = FakeLLMProviderClient({"paragraphs": [["OpenAI platform"]]})
+    extractor = LLMConceptExtractor(config.extraction, client=client)
+    paragraphs = [
+        Paragraph(
+            id="p1",
+            text="OpenAI builds developer tooling.",
+            metadata={
+                "seen_at": datetime(2026, 3, 25, tzinfo=UTC),
+                "tags": {"alpha", "beta"},
+            },
+        )
+    ]
+
+    extractor.extract(paragraphs)
+
+    artifact_files = sorted((tmp_path / "artifacts").glob("*.json"))
+    artifact = json.loads(artifact_files[0].read_text(encoding="utf-8"))
+    assert artifact["paragraphs"][0]["metadata"]["seen_at"] == "2026-03-25T00:00:00+00:00"
+    assert artifact["paragraphs"][0]["metadata"]["tags"] == ["alpha", "beta"]
+
+
 def test_llm_extractor_records_failure_artifacts(tmp_path: Path) -> None:
     config = LabelGeneratorConfig(extractor_mode="llm")
     config.extraction.llm.model = "test-model"
@@ -213,6 +241,36 @@ def test_llm_cache_key_includes_max_concepts_per_paragraph(tmp_path: Path) -> No
     first_mentions = extractor.extract(paragraphs)
 
     config.extraction.llm.max_concepts_per_paragraph = 2
+    second_client = FakeLLMProviderClient({"paragraphs": [["OpenAI", "developer tooling"]]})
+    second_extractor = LLMConceptExtractor(config.extraction, client=second_client)
+    second_mentions = second_extractor.extract(paragraphs)
+
+    assert [mention.normalized for mention in first_mentions] == ["openai"]
+    assert [mention.normalized for mention in second_mentions] == [
+        "openai",
+        "developer tooling",
+    ]
+    assert first_client.call_count == 1
+    assert second_client.call_count == 1
+
+
+def test_llm_cache_key_includes_effective_default_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_dir = str(tmp_path / "cache")
+    paragraphs = [Paragraph(id="p1", text="OpenAI builds developer tooling.")]
+
+    first_client = FakeLLMProviderClient({"paragraphs": [["OpenAI"]]})
+    extractor = LLMConceptExtractor(config.extraction, client=first_client)
+    first_mentions = extractor.extract(paragraphs)
+
+    monkeypatch.setattr(
+        "labelgen.extraction.llm_extractor._DEFAULT_PROMPT_TEMPLATE",
+        "Different built-in prompt.\n{paragraphs_block}",
+    )
     second_client = FakeLLMProviderClient({"paragraphs": [["OpenAI", "developer tooling"]]})
     second_extractor = LLMConceptExtractor(config.extraction, client=second_client)
     second_mentions = second_extractor.extract(paragraphs)

@@ -165,7 +165,7 @@ class LLMConceptExtractor(ConceptExtractor):
             "You extract salient technical concepts from paragraphs for downstream "
             "topic labeling. Return JSON only."
         )
-        prompt_template = self._config.llm.prompt_template or _DEFAULT_PROMPT_TEMPLATE
+        prompt_template = self._effective_prompt_template()
         paragraph_count = len(paragraphs)
         schema_example = self._schema_example(paragraph_count)
         paragraph_lines = [
@@ -308,7 +308,7 @@ class LLMConceptExtractor(ConceptExtractor):
             "provider": self._config.llm.provider,
             "model": self._config.llm.model,
             "prompt_version": self._config.llm.prompt_version,
-            "prompt_template": self._config.llm.prompt_template,
+            "effective_prompt_template": self._effective_prompt_template(),
             "temperature": self._config.llm.temperature,
             "max_output_tokens": self._config.llm.max_output_tokens,
             "max_concepts_per_paragraph": self._config.llm.max_concepts_per_paragraph,
@@ -376,7 +376,10 @@ class LLMConceptExtractor(ConceptExtractor):
             "parsed_concepts": payload.concept_lists,
             "mentions": [asdict(mention) for mention in mentions],
         }
-        artifact_path.write_text(json.dumps(artifact_payload, indent=2), encoding="utf-8")
+        artifact_path.write_text(
+            json.dumps(self._json_safe_value(artifact_payload), indent=2),
+            encoding="utf-8",
+        )
 
     def _artifact_dir(self) -> Path | None:
         """Resolve the optional artifact output directory."""
@@ -421,4 +424,36 @@ class LLMConceptExtractor(ConceptExtractor):
             "raw_response_text": raw_response_text,
             "error_message": error_message,
         }
-        artifact_path.write_text(json.dumps(artifact_payload, indent=2), encoding="utf-8")
+        artifact_path.write_text(
+            json.dumps(self._json_safe_value(artifact_payload), indent=2),
+            encoding="utf-8",
+        )
+
+    def _effective_prompt_template(self) -> str:
+        """Return the prompt template that is actually used for extraction."""
+
+        return self._config.llm.prompt_template or _DEFAULT_PROMPT_TEMPLATE
+
+    def _json_safe_value(self, value: Any) -> Any:
+        """Convert nested values into a JSON-safe representation for artifacts."""
+
+        if value is None or isinstance(value, str | int | float | bool):
+            return value
+        if isinstance(value, datetime):
+            return value.isoformat()
+        if isinstance(value, Path):
+            return str(value)
+        if isinstance(value, dict):
+            mapping = cast(dict[object, Any], value)
+            return {
+                str(key): self._json_safe_value(item)
+                for key, item in mapping.items()
+            }
+        if isinstance(value, list | tuple):
+            sequence = cast(list[Any] | tuple[Any, ...], value)
+            return [self._json_safe_value(item) for item in sequence]
+        if isinstance(value, set):
+            items = cast(set[Any], value)
+            serialized_items = [self._json_safe_value(item) for item in items]
+            return sorted(serialized_items, key=json.dumps)
+        return repr(value)
