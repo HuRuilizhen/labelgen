@@ -39,6 +39,8 @@ def clean_paragraphs(
     cleaned: list[Paragraph] = []
     for paragraph in paragraphs:
         text = clean_paragraph_text(paragraph.text, config)
+        if not text:
+            continue
         cleaned.append(Paragraph(id=paragraph.id, text=text, metadata=paragraph.metadata))
     return cleaned
 

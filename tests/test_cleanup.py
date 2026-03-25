@@ -34,6 +34,21 @@ def test_clean_paragraphs_preserves_ids_and_metadata() -> None:
     assert "www.ibm.com/support" not in cleaned[0].text
 
 
+def test_clean_paragraphs_drop_entries_that_become_empty() -> None:
+    cleaned = clean_paragraphs(
+        [
+            Paragraph(
+                id="p1",
+                text="SUBSCRIBE You can track all active APARs for this component [ [ * *",
+            ),
+            Paragraph(id="p2", text="Actual failure details remain after cleanup."),
+        ],
+        ExtractionConfig(),
+    )
+
+    assert [paragraph.id for paragraph in cleaned] == ["p2"]
+
+
 def test_clean_paragraphs_can_be_disabled() -> None:
     config = ExtractionConfig(clean_technical_documents=False)
     paragraph = Paragraph(id="p1", text="PROBLEM SUMMARY: Keep https://example.com")

@@ -44,6 +44,8 @@ def test_generator_save_and_load_preserve_config(tmp_path: Path) -> None:
     config.extraction.min_document_frequency = 2
     config.extraction.llm.provider = "mistral"
     config.extraction.llm.model = "mistral-small-latest"
+    config.extraction.llm.record_extraction_artifacts = True
+    config.extraction.llm.artifact_dir = ".tmp-artifacts"
     config.label_assignment.max_labels_per_paragraph = 1
 
     generator = LabelGenerator(config)
@@ -58,6 +60,8 @@ def test_generator_save_and_load_preserve_config(tmp_path: Path) -> None:
     assert loaded.config.extraction.min_document_frequency == 2
     assert loaded.config.extraction.llm.provider == "mistral"
     assert loaded.config.extraction.llm.model == "mistral-small-latest"
+    assert loaded.config.extraction.llm.record_extraction_artifacts is True
+    assert loaded.config.extraction.llm.artifact_dir == ".tmp-artifacts"
     assert loaded.config.label_assignment.max_labels_per_paragraph == 1
 
 
