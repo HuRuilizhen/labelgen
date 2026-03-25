@@ -73,6 +73,22 @@ def test_llm_extractor_uses_custom_prompt_template(tmp_path: Path) -> None:
     assert "Paragraph 0: OpenAI builds developer tooling." in client.messages[1]["content"]
 
 
+def test_llm_extractor_default_prompt_includes_exact_paragraph_count(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_dir = str(tmp_path)
+    client = FakeLLMProviderClient({"paragraphs": [["OpenAI platform"]]})
+    extractor = LLMConceptExtractor(config.extraction, client=client)
+
+    extractor.extract([Paragraph(id="p1", text="OpenAI builds developer tooling.")])
+
+    prompt = client.messages[1]["content"]
+    assert '"paragraphs" must contain exactly 1 arrays.' in prompt
+    assert '{"paragraphs": [["concept 1", "concept 2"]]}' in prompt
+    assert '{"paragraphs": [[]]}' in prompt
+    assert "Do not return extra arrays" in prompt
+
+
 def test_llm_extractor_uses_disk_cache(tmp_path: Path) -> None:
     config = LabelGeneratorConfig(extractor_mode="llm")
     config.extraction.llm.model = "test-model"
@@ -92,6 +108,18 @@ def test_llm_extractor_uses_disk_cache(tmp_path: Path) -> None:
 
     assert [mention.normalized for mention in first] == [mention.normalized for mention in second]
     assert client.call_count == 1
+
+
+def test_llm_extractor_accepts_empty_paragraphs_array_for_single_input(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_dir = str(tmp_path)
+    client = FakeLLMProviderClient({"paragraphs": []})
+    extractor = LLMConceptExtractor(config.extraction, client=client)
+
+    mentions = extractor.extract([Paragraph(id="p1", text="Boilerplate paragraph.")])
+
+    assert mentions == []
 
 
 def test_llm_extractor_can_record_structured_artifacts(tmp_path: Path) -> None:
@@ -128,7 +156,7 @@ def test_llm_extractor_records_failure_artifacts(tmp_path: Path) -> None:
     config.extraction.llm.cache_enabled = False
     config.extraction.llm.record_extraction_artifacts = True
     config.extraction.llm.artifact_dir = str(tmp_path / "artifacts")
-    client = FakeLLMProviderClient({"paragraphs": []})
+    client = FakeLLMProviderClient({"paragraphs": [["OpenAI"], ["developer tooling"]]})
     extractor = LLMConceptExtractor(config.extraction, client=client)
 
     with pytest.raises(RuntimeError, match="align with the input batch size"):
@@ -139,9 +167,11 @@ def test_llm_extractor_records_failure_artifacts(tmp_path: Path) -> None:
     artifact = json.loads(artifact_files[0].read_text(encoding="utf-8"))
     assert artifact["artifact_type"] == "llm_extraction_batch_error"
     assert artifact["error_message"] == (
-        "LLM extraction output must align with the input batch size."
+        "RuntimeError: LLM extraction output must align with the input batch size."
     )
-    assert artifact["raw_response_text"] == json.dumps({"paragraphs": []})
+    assert artifact["raw_response_text"] == json.dumps(
+        {"paragraphs": [["OpenAI"], ["developer tooling"]]}
+    )
     assert artifact["paragraphs"][0]["id"] == "p1"
 
 

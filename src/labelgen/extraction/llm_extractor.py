@@ -17,13 +17,24 @@ from labelgen.types import ConceptMention, Paragraph
 
 _DEFAULT_PROMPT_TEMPLATE = "\n".join(
     [
-        "Return a JSON object with this exact schema:",
-        '{{"paragraphs": [["concept 1", "concept 2"], ["concept 3"]]}}',
-        "Rules:",
-        "- Extract concise technical concepts suitable for paragraph labeling.",
-        "- Prefer products, components, errors, operations, entities, and domain nouns.",
-        "- Exclude URLs, generic support boilerplate, pronouns, and section headers.",
-        "- Preserve the original concept wording when useful.",
+        'Return a JSON object with exactly one key: "paragraphs".',
+        '"paragraphs" must contain exactly {paragraph_count} arrays.',
+        "Each output array must align positionally with the input paragraph index.",
+        "Do not return extra arrays, omit arrays, merge paragraphs, or split paragraphs.",
+        "If a paragraph has no useful concepts, return an empty array for that paragraph.",
+        "Schema example for this request:",
+        "{schema_example}",
+        "Single-paragraph no-concept example:",
+        '{{"paragraphs": [[]]}}',
+        "Concept definition:",
+        "- A concept is a concise technical unit useful for downstream paragraph labeling.",
+        "- Prefer product names, component names, report names, commands, operations,",
+        "  errors, protocols, configuration items, and domain-specific noun phrases.",
+        "- Exclude URLs, support-note boilerplate, pronouns, section headers, vague",
+        "  generic words, and pure formatting fragments.",
+        "- Do not add explanations or prose outside the JSON object.",
+        "- Do not invent concepts that are not grounded in the paragraph text.",
+        "- Preserve useful original wording when possible.",
         "- Return at most {max_concepts_per_paragraph} concepts per paragraph.",
         "",
         "{paragraphs_block}",
@@ -123,14 +134,14 @@ class LLMConceptExtractor(ConceptExtractor):
         )
         try:
             concept_lists = self._parse_provider_output(content, len(paragraphs))
-        except RuntimeError as error:
+        except Exception as error:
             self._write_failure_artifact(
                 batch_index=batch_index,
                 paragraphs=paragraphs,
                 cache_digest=cache_digest,
                 messages=messages,
                 raw_response_text=content,
-                error_message=str(error),
+                error_message=f"{type(error).__name__}: {error}",
             )
             raise
         if cache_path is not None:
@@ -155,18 +166,29 @@ class LLMConceptExtractor(ConceptExtractor):
             "topic labeling. Return JSON only."
         )
         prompt_template = self._config.llm.prompt_template or _DEFAULT_PROMPT_TEMPLATE
+        paragraph_count = len(paragraphs)
+        schema_example = self._schema_example(paragraph_count)
         paragraph_lines = [
             f"Paragraph {index}: {paragraph.text}"
             for index, paragraph in enumerate(paragraphs)
         ]
         user_message = prompt_template.format(
             max_concepts_per_paragraph=self._config.llm.max_concepts_per_paragraph,
+            paragraph_count=paragraph_count,
+            schema_example=schema_example,
             paragraphs_block="\n".join(paragraph_lines),
         )
         return [
             {"role": "system", "content": system_message},
             {"role": "user", "content": user_message},
         ]
+
+    def _schema_example(self, paragraph_count: int) -> str:
+        """Return a request-aligned schema example for the current batch size."""
+
+        if paragraph_count <= 1:
+            return '{"paragraphs": [["concept 1", "concept 2"]]}'
+        return '{"paragraphs": [["concept 1", "concept 2"], ["concept 3"]]}'
 
     def _parse_provider_output(self, content: str, paragraph_count: int) -> list[list[str]]:
         """Parse a provider response into per-paragraph concept text lists."""
@@ -177,6 +199,8 @@ class LLMConceptExtractor(ConceptExtractor):
             raise RuntimeError("LLM extraction output must contain a paragraphs list.")
 
         raw_lists = cast(list[object], paragraphs)
+        if paragraph_count == 1 and len(raw_lists) == 0:
+            return [[]]
         if len(raw_lists) != paragraph_count:
             raise RuntimeError("LLM extraction output must align with the input batch size.")
 
