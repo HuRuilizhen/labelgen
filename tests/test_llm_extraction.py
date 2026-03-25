@@ -16,7 +16,7 @@ from labelgen.types import Paragraph
 class FakeLLMProviderClient(LLMProviderClient):
     """Simple fake provider client returning predetermined JSON."""
 
-    def __init__(self, payload: dict[str, object]) -> None:
+    def __init__(self, payload: object) -> None:
         self.payload = payload
         self.call_count = 0
         self.messages: list[dict[str, str]] = []
@@ -30,6 +30,8 @@ class FakeLLMProviderClient(LLMProviderClient):
         self.messages = messages
         del config
         self.call_count += 1
+        if isinstance(self.payload, str):
+            return self.payload
         return json.dumps(self.payload)
 
 
@@ -115,6 +117,30 @@ def test_llm_extractor_accepts_empty_paragraphs_array_for_single_input(tmp_path:
     config.extraction.llm.model = "test-model"
     config.extraction.llm.cache_dir = str(tmp_path)
     client = FakeLLMProviderClient({"paragraphs": []})
+    extractor = LLMConceptExtractor(config.extraction, client=client)
+
+    mentions = extractor.extract([Paragraph(id="p1", text="Boilerplate paragraph.")])
+
+    assert mentions == []
+
+
+def test_llm_extractor_accepts_json_with_trailing_garbage(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_dir = str(tmp_path)
+    client = FakeLLMProviderClient('{"paragraphs": [[]]}}')
+    extractor = LLMConceptExtractor(config.extraction, client=client)
+
+    mentions = extractor.extract([Paragraph(id="p1", text="Boilerplate paragraph.")])
+
+    assert mentions == []
+
+
+def test_llm_extractor_recovers_missing_closing_delimiters(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_dir = str(tmp_path)
+    client = FakeLLMProviderClient('{"paragraphs": [[]]')
     extractor = LLMConceptExtractor(config.extraction, client=client)
 
     mentions = extractor.extract([Paragraph(id="p1", text="Boilerplate paragraph.")])

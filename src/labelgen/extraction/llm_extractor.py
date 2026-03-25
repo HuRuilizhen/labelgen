@@ -231,16 +231,50 @@ class LLMConceptExtractor(ConceptExtractor):
     def _load_json_object(self, content: str) -> dict[str, Any]:
         """Parse JSON or extract a JSON object from a textual provider response."""
 
+        decoder = json.JSONDecoder()
+        stripped = content.strip()
         try:
-            data = json.loads(content)
+            data, _ = decoder.raw_decode(stripped)
         except json.JSONDecodeError:
-            start = content.find("{")
-            end = content.rfind("}")
-            if start == -1 or end == -1 or start >= end:
-                raise RuntimeError("LLM extraction response did not contain valid JSON.") from None
-            data = json.loads(content[start : end + 1])
+            recovered = self._recover_partial_json_object(stripped, decoder)
+            if recovered is not None:
+                data = recovered
+            else:
+                start = content.find("{")
+                if start == -1:
+                    raise RuntimeError(
+                        "LLM extraction response did not contain valid JSON."
+                    ) from None
+                candidate = content[start:].strip()
+                recovered = self._recover_partial_json_object(candidate, decoder)
+                if recovered is not None:
+                    data = recovered
+                else:
+                    data, _ = decoder.raw_decode(content[start:])
         if not isinstance(data, dict):
             raise RuntimeError("LLM extraction response must decode to a JSON object.")
+        return cast(dict[str, Any], data)
+
+    def _recover_partial_json_object(
+        self,
+        candidate: str,
+        decoder: json.JSONDecoder,
+    ) -> dict[str, Any] | None:
+        """Recover lightly malformed JSON objects by balancing closing delimiters."""
+
+        if not candidate.startswith("{"):
+            return None
+        needed_braces = max(candidate.count("{") - candidate.count("}"), 0)
+        needed_brackets = max(candidate.count("[") - candidate.count("]"), 0)
+        if needed_braces == 0 and needed_brackets == 0:
+            return None
+        repaired = f"{candidate}{']' * needed_brackets}{'}' * needed_braces}"
+        try:
+            data, _ = decoder.raw_decode(repaired)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(data, dict):
+            return None
         return cast(dict[str, Any], data)
 
     def _build_mentions(self, paragraph: Paragraph, concepts: list[str]) -> list[ConceptMention]:
