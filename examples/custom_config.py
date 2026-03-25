@@ -7,7 +7,7 @@ def main() -> None:
     """Run the pipeline with explicit deterministic fallback settings."""
 
     config = LabelGeneratorConfig(
-        use_nlp_extractor=False,
+        extractor_mode="heuristic",
         use_graph_community_detection=False,
     )
     config.extraction.min_document_frequency = 2
