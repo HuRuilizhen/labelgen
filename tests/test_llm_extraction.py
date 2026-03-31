@@ -178,6 +178,9 @@ def test_llm_extractor_can_record_structured_artifacts(tmp_path: Path) -> None:
     config.extraction.llm.model = "test-model"
     config.extraction.llm.cache_enabled = False
     config.extraction.llm.record_extraction_artifacts = True
+    config.extraction.llm.record_raw_response_text = True
+    config.extraction.llm.record_paragraph_text = True
+    config.extraction.llm.record_paragraph_metadata = True
     config.extraction.llm.artifact_dir = str(tmp_path / "artifacts")
     client = FakeLLMProviderClient({"paragraphs": [["OpenAI platform", "developer tooling"]]})
     extractor = LLMConceptExtractor(config.extraction, client=client)
@@ -206,6 +209,7 @@ def test_llm_extractor_artifacts_are_json_safe(tmp_path: Path) -> None:
     config.extraction.llm.model = "test-model"
     config.extraction.llm.cache_enabled = False
     config.extraction.llm.record_extraction_artifacts = True
+    config.extraction.llm.record_paragraph_metadata = True
     config.extraction.llm.artifact_dir = str(tmp_path / "artifacts")
     client = FakeLLMProviderClient({"paragraphs": [["OpenAI platform"]]})
     extractor = LLMConceptExtractor(config.extraction, client=client)
@@ -233,6 +237,8 @@ def test_llm_extractor_records_failure_artifacts(tmp_path: Path) -> None:
     config.extraction.llm.model = "test-model"
     config.extraction.llm.cache_enabled = False
     config.extraction.llm.record_extraction_artifacts = True
+    config.extraction.llm.record_raw_response_text = True
+    config.extraction.llm.record_paragraph_text = True
     config.extraction.llm.artifact_dir = str(tmp_path / "artifacts")
     client = FakeLLMProviderClient({"paragraphs": [["OpenAI"], ["developer tooling"]]})
     extractor = LLMConceptExtractor(config.extraction, client=client)
@@ -251,6 +257,34 @@ def test_llm_extractor_records_failure_artifacts(tmp_path: Path) -> None:
         {"paragraphs": [["OpenAI"], ["developer tooling"]]}
     )
     assert artifact["paragraphs"][0]["id"] == "p1"
+
+
+def test_llm_extractor_artifact_safety_controls_suppress_sensitive_fields(
+    tmp_path: Path,
+) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_enabled = False
+    config.extraction.llm.record_extraction_artifacts = True
+    config.extraction.llm.artifact_dir = str(tmp_path / "artifacts")
+    client = FakeLLMProviderClient({"paragraphs": [["OpenAI platform"]]})
+    extractor = LLMConceptExtractor(config.extraction, client=client)
+
+    extractor.extract(
+        [
+            Paragraph(
+                id="p1",
+                text="OpenAI builds developer tooling.",
+                metadata={"source": "internal"},
+            )
+        ]
+    )
+
+    artifact_files = sorted((tmp_path / "artifacts").glob("*.json"))
+    artifact = json.loads(artifact_files[0].read_text(encoding="utf-8"))
+    assert artifact["raw_response_text"] is None
+    assert artifact["paragraphs"] == [{"id": "p1"}]
+    assert artifact["messages"][1]["content"] == "[omitted because record_paragraph_text=False]"
 
 
 def test_llm_cache_key_includes_max_concepts_per_paragraph(tmp_path: Path) -> None:
