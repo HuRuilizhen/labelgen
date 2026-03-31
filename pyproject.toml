@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "paralabelgen"
-version = "0.2.0"
+version = "0.2.1"
 description = "A Python library for generating discrete paragraph labels from concept extraction, graph communities, and interpretable assignment rules, with heuristic, spaCy, and provider-backed LLM extraction modes."
 readme = "README.md"
 license = { text = "MIT" }
