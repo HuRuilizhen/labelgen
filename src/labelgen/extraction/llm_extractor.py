@@ -131,6 +131,7 @@ class LLMConceptExtractor(ConceptExtractor):
         content = self._client.complete_chat(
             messages=messages,
             config=self._config.llm,
+            response_schema=self._provider_response_schema(len(paragraphs)),
         )
         try:
             concept_lists = self._parse_provider_output(content, len(paragraphs))
@@ -189,6 +190,27 @@ class LLMConceptExtractor(ConceptExtractor):
         if paragraph_count <= 1:
             return '{"paragraphs": [["concept 1", "concept 2"]]}'
         return '{"paragraphs": [["concept 1", "concept 2"], ["concept 3"]]}'
+
+    def _provider_response_schema(self, paragraph_count: int) -> dict[str, Any]:
+        """Build the structured-output schema for one extraction batch."""
+
+        return {
+            "type": "object",
+            "properties": {
+                "paragraphs": {
+                    "type": "array",
+                    "minItems": paragraph_count,
+                    "maxItems": paragraph_count,
+                    "items": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "maxItems": self._config.llm.max_concepts_per_paragraph,
+                    },
+                }
+            },
+            "required": ["paragraphs"],
+            "additionalProperties": False,
+        }
 
     def _parse_provider_output(self, content: str, paragraph_count: int) -> list[list[str]]:
         """Parse a provider response into per-paragraph concept text lists."""
