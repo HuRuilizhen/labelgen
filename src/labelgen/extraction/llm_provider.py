@@ -33,6 +33,7 @@ class LLMProviderClient(ABC):
         *,
         messages: list[dict[str, str]],
         config: LLMExtractionConfig,
+        response_schema: dict[str, Any] | None = None,
     ) -> str:
         """Return the message content for one structured extraction request."""
 
@@ -45,17 +46,12 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
         *,
         messages: list[dict[str, str]],
         config: LLMExtractionConfig,
+        response_schema: dict[str, Any] | None = None,
     ) -> str:
         """Send a chat completion request and return the assistant content."""
 
         api_key = self._resolve_api_key(config)
         url = self._resolve_chat_completions_url(config)
-        payload = {
-            "model": config.model,
-            "messages": messages,
-            "temperature": config.temperature,
-            "max_tokens": config.max_output_tokens,
-        }
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -64,16 +60,74 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
             headers["OpenAI-Organization"] = config.organization
 
         last_error: Exception | None = None
+        allow_prompt_only_fallback = response_schema is not None
         for attempt in range(config.max_retries + 1):
             try:
+                payload = self._build_payload(
+                    messages=messages,
+                    config=config,
+                    response_schema=response_schema,
+                )
                 response = self._post_json(url, headers, payload, timeout=config.timeout_seconds)
                 return self._extract_content(response)
-            except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
+            except HTTPError as error:
+                last_error = error
+                if (
+                    allow_prompt_only_fallback
+                    and response_schema is not None
+                    and self._supports_prompt_only_fallback(error)
+                ):
+                    response_schema = None
+                    allow_prompt_only_fallback = False
+                    continue
+                if attempt >= config.max_retries:
+                    break
+                time.sleep(min(2**attempt, 5))
+            except (URLError, TimeoutError, RuntimeError) as error:
                 last_error = error
                 if attempt >= config.max_retries:
                     break
                 time.sleep(min(2**attempt, 5))
         raise RuntimeError("LLM provider request failed after retries.") from last_error
+
+    def _build_payload(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        config: LLMExtractionConfig,
+        response_schema: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Build one chat-completions payload."""
+
+        payload: dict[str, Any] = {
+            "model": config.model,
+            "messages": messages,
+            "temperature": config.temperature,
+            "max_tokens": config.max_output_tokens,
+        }
+        if response_schema is not None:
+            payload["response_format"] = self._structured_response_format(response_schema)
+        return payload
+
+    def _structured_response_format(
+        self,
+        response_schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Build the OpenAI-compatible structured-output request payload."""
+
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "labelgen_paragraph_concepts",
+                "strict": True,
+                "schema": response_schema,
+            },
+        }
+
+    def _supports_prompt_only_fallback(self, error: HTTPError) -> bool:
+        """Return whether a structured-output rejection should retry without schema."""
+
+        return error.code in {400, 404, 415, 422}
 
     def _resolve_api_key(self, config: LLMExtractionConfig) -> str:
         """Resolve the provider API key from explicit config or environment."""
