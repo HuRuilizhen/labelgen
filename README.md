@@ -147,6 +147,19 @@ usage.
 - artifacts are intended for local evaluation and debugging workflows, not as a
   default production feature
 
+## Optional Manual Smoke Test
+
+For a small manual LLM-path verification outside the default test suite, run
+the example script with one provider/model pair and a valid API key in the
+expected environment variable:
+
+```bash
+OPENAI_API_KEY=... .venv/bin/python examples/llm_extraction.py
+```
+
+This is intended as a lightweight manual smoke test for provider connectivity
+and parsing, not as part of the default automated suite.
+
 ## Public API
 
 The main public entrypoints are:

@@ -177,6 +177,18 @@ LLM workflows:
 These failures preserve provider identity and expose additional context such as
 HTTP status code and a compact response summary when available.
 
+### Manual Smoke-Test Path
+
+The repository keeps live-provider checks out of the default automated test
+suite. For a lightweight manual smoke test of the current LLM path, run:
+
+```bash
+OPENAI_API_KEY=... .venv/bin/python examples/llm_extraction.py
+```
+
+This is intended to verify provider connectivity and response parsing with real
+credentials, not to act as a deterministic regression test.
+
 ## Result Models
 
 The package exports these result dataclasses:
@@ -220,4 +232,3 @@ installed. Missing models raise an explicit runtime error.
 When `extractor_mode="llm"`, provider configuration must be valid and the
 expected API key must be available. The LLM path does not silently fall back to
 spaCy or heuristic extraction.
-
