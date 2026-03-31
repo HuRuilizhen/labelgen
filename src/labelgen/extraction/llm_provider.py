@@ -33,6 +33,7 @@ class LLMProviderClient(ABC):
         *,
         messages: list[dict[str, str]],
         config: LLMExtractionConfig,
+        response_schema: dict[str, Any] | None = None,
     ) -> str:
         """Return the message content for one structured extraction request."""
 
@@ -45,6 +46,7 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
         *,
         messages: list[dict[str, str]],
         config: LLMExtractionConfig,
+        response_schema: dict[str, Any] | None = None,
     ) -> str:
         """Send a chat completion request and return the assistant content."""
 
@@ -56,6 +58,8 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
             "temperature": config.temperature,
             "max_tokens": config.max_output_tokens,
         }
+        if response_schema is not None:
+            payload["response_format"] = self._structured_response_format(response_schema)
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -74,6 +78,21 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
                     break
                 time.sleep(min(2**attempt, 5))
         raise RuntimeError("LLM provider request failed after retries.") from last_error
+
+    def _structured_response_format(
+        self,
+        response_schema: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Build the OpenAI-compatible structured-output request payload."""
+
+        return {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "labelgen_paragraph_concepts",
+                "strict": True,
+                "schema": response_schema,
+            },
+        }
 
     def _resolve_api_key(self, config: LLMExtractionConfig) -> str:
         """Resolve the provider API key from explicit config or environment."""
