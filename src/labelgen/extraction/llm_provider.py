@@ -24,6 +24,56 @@ _DEFAULT_API_KEY_ENV_VARS: dict[LLMProviderName, str] = {
 }
 
 
+class LLMProviderError(RuntimeError):
+    """Base error for provider-backed LLM extraction failures."""
+
+    def __init__(self, provider: str, message: str) -> None:
+        super().__init__(message)
+        self.provider = provider
+
+
+class LLMProviderConfigurationError(LLMProviderError):
+    """Raised when provider configuration is incomplete or invalid."""
+
+
+class LLMProviderTransportError(LLMProviderError):
+    """Raised when the provider cannot be reached successfully."""
+
+
+class LLMProviderHTTPStatusError(LLMProviderError):
+    """Raised when a provider returns an HTTP error response."""
+
+    def __init__(
+        self,
+        provider: str,
+        message: str,
+        *,
+        status_code: int,
+        response_summary: str | None,
+    ) -> None:
+        super().__init__(provider, message)
+        self.status_code = status_code
+        self.response_summary = response_summary
+
+
+class LLMProviderParseError(LLMProviderError):
+    """Raised when a provider response cannot be decoded as expected."""
+
+
+class LLMProviderRetryExhaustedError(LLMProviderError):
+    """Raised when provider retries are exhausted."""
+
+    def __init__(
+        self,
+        provider: str,
+        message: str,
+        *,
+        last_error: Exception | None,
+    ) -> None:
+        super().__init__(provider, message)
+        self.last_error = last_error
+
+
 class LLMProviderClient(ABC):
     """Abstract provider client for one chat-completion style request."""
 
@@ -80,15 +130,42 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
                     response_schema = None
                     allow_prompt_only_fallback = False
                     continue
+                last_error = self._http_status_error(config.provider, error)
                 if attempt >= config.max_retries:
                     break
                 time.sleep(min(2**attempt, 5))
-            except (URLError, TimeoutError, RuntimeError) as error:
-                last_error = error
+            except URLError as error:
+                last_error = LLMProviderTransportError(
+                    config.provider,
+                    (
+                        f"LLM provider '{config.provider}' transport failure: "
+                        f"{self._url_error_reason(error)}"
+                    ),
+                )
                 if attempt >= config.max_retries:
                     break
                 time.sleep(min(2**attempt, 5))
-        raise RuntimeError("LLM provider request failed after retries.") from last_error
+            except TimeoutError:
+                last_error = LLMProviderTransportError(
+                    config.provider,
+                    f"LLM provider '{config.provider}' request timed out.",
+                )
+                if attempt >= config.max_retries:
+                    break
+                time.sleep(min(2**attempt, 5))
+            except RuntimeError as error:
+                last_error = LLMProviderParseError(
+                    config.provider,
+                    f"LLM provider '{config.provider}' returned an invalid response: {error}",
+                )
+                if attempt >= config.max_retries:
+                    break
+                time.sleep(min(2**attempt, 5))
+        raise LLMProviderRetryExhaustedError(
+            config.provider,
+            f"LLM provider '{config.provider}' request failed after retries.",
+            last_error=last_error,
+        ) from last_error
 
     def _build_payload(
         self,
@@ -129,15 +206,56 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
 
         return error.code in {400, 404, 415, 422}
 
+    def _http_status_error(
+        self,
+        provider: str,
+        error: HTTPError,
+    ) -> LLMProviderHTTPStatusError:
+        """Build a structured HTTP-status error with a compact response summary."""
+
+        response_summary = self._http_error_summary(error)
+        detail = (
+            f"LLM provider '{provider}' returned HTTP {error.code}."
+            if response_summary is None
+            else f"LLM provider '{provider}' returned HTTP {error.code}: {response_summary}"
+        )
+        return LLMProviderHTTPStatusError(
+            provider,
+            detail,
+            status_code=error.code,
+            response_summary=response_summary,
+        )
+
+    def _http_error_summary(self, error: HTTPError) -> str | None:
+        """Return a compact, safe response-body summary for an HTTP error."""
+
+        try:
+            body = error.read().decode("utf-8", errors="replace").strip()
+        except OSError:
+            return None
+        if not body:
+            return None
+        normalized = " ".join(body.split())
+        return normalized[:200]
+
+    def _url_error_reason(self, error: URLError) -> str:
+        """Return a compact transport failure reason."""
+
+        reason = error.reason
+        if isinstance(reason, str):
+            return reason
+        return str(reason)
+
     def _resolve_api_key(self, config: LLMExtractionConfig) -> str:
         """Resolve the provider API key from explicit config or environment."""
 
         env_var = config.api_key_env_var or _DEFAULT_API_KEY_ENV_VARS[config.provider]
         api_key = os.environ.get(env_var)
         if not api_key:
-            raise RuntimeError(
+            raise LLMProviderConfigurationError(
+                config.provider,
                 f"Missing API key for provider '{config.provider}'. Set environment variable "
-                f"'{env_var}' or configure `api_key_env_var`."
+                f"'{env_var}' or configure `api_key_env_var`.",
             )
         return api_key
 

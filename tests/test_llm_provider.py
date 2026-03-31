@@ -4,10 +4,16 @@ from __future__ import annotations
 
 from email.message import Message
 from typing import Any
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 from labelgen import LabelGeneratorConfig
-from labelgen.extraction.llm_provider import OpenAICompatibleProviderClient
+from labelgen.extraction.llm_provider import (
+    LLMProviderConfigurationError,
+    LLMProviderHTTPStatusError,
+    LLMProviderRetryExhaustedError,
+    LLMProviderTransportError,
+    OpenAICompatibleProviderClient,
+)
 
 
 class RecordingProviderClient(OpenAICompatibleProviderClient):
@@ -139,3 +145,109 @@ def test_openai_compatible_provider_falls_back_when_json_schema_is_rejected() ->
     assert len(client.payloads) == 2
     assert "response_format" in client.payloads[0]
     assert "response_format" not in client.payloads[1]
+
+
+def test_openai_compatible_provider_raises_configuration_error_for_missing_api_key() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "openai"
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.api_key_env_var = "LABELGEN_TEST_MISSING_KEY"
+    client = OpenAICompatibleProviderClient()
+
+    try:
+        client.complete_chat(
+            messages=[{"role": "user", "content": "Extract concepts."}],
+            config=config.extraction.llm,
+        )
+    except LLMProviderConfigurationError as error:
+        assert error.provider == "openai"
+        assert "LABELGEN_TEST_MISSING_KEY" in str(error)
+    else:
+        raise AssertionError("Expected a configuration error for a missing API key.")
+
+
+class AlwaysHTTPErrorProviderClient(OpenAICompatibleProviderClient):
+    """Provider client that always returns a fixed HTTP error."""
+
+    def _resolve_api_key(self, config: object) -> str:
+        del config
+        return "test-key"
+
+    def _post_json(
+        self,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        *,
+        timeout: float,
+    ) -> dict[str, Any]:
+        del url, headers, payload, timeout
+        raise HTTPError(
+            url="https://example.invalid/v1/chat/completions",
+            code=429,
+            msg="Too Many Requests",
+            hdrs=Message(),
+            fp=None,
+        )
+
+
+def test_openai_compatible_provider_preserves_http_status_diagnostics() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "mistral"
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.max_retries = 0
+    client = AlwaysHTTPErrorProviderClient()
+
+    try:
+        client.complete_chat(
+            messages=[{"role": "user", "content": "Extract concepts."}],
+            config=config.extraction.llm,
+        )
+    except LLMProviderRetryExhaustedError as error:
+        assert error.provider == "mistral"
+        assert isinstance(error.last_error, LLMProviderHTTPStatusError)
+        assert error.last_error.status_code == 429
+        assert error.last_error.response_summary is None
+        assert "mistral" in str(error)
+    else:
+        raise AssertionError("Expected retry exhaustion with an HTTP status error.")
+
+
+class AlwaysURLErrorProviderClient(OpenAICompatibleProviderClient):
+    """Provider client that always raises a transport error."""
+
+    def _resolve_api_key(self, config: object) -> str:
+        del config
+        return "test-key"
+
+    def _post_json(
+        self,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        *,
+        timeout: float,
+    ) -> dict[str, Any]:
+        del url, headers, payload, timeout
+        raise URLError("connection reset by peer")
+
+
+def test_openai_compatible_provider_preserves_transport_diagnostics() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "qwen"
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.max_retries = 0
+    client = AlwaysURLErrorProviderClient()
+
+    try:
+        client.complete_chat(
+            messages=[{"role": "user", "content": "Extract concepts."}],
+            config=config.extraction.llm,
+        )
+    except LLMProviderRetryExhaustedError as error:
+        assert error.provider == "qwen"
+        assert isinstance(error.last_error, LLMProviderTransportError)
+        assert "connection reset by peer" in str(error.last_error)
+        assert "qwen" in str(error)
+    else:
+        raise AssertionError("Expected retry exhaustion with a transport error.")

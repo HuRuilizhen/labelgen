@@ -45,6 +45,9 @@ def test_generator_save_and_load_preserve_config(tmp_path: Path) -> None:
     config.extraction.llm.provider = "mistral"
     config.extraction.llm.model = "mistral-small-latest"
     config.extraction.llm.record_extraction_artifacts = True
+    config.extraction.llm.record_raw_response_text = True
+    config.extraction.llm.record_paragraph_text = True
+    config.extraction.llm.record_paragraph_metadata = True
     config.extraction.llm.artifact_dir = ".tmp-artifacts"
     config.label_assignment.max_labels_per_paragraph = 1
 
@@ -61,6 +64,9 @@ def test_generator_save_and_load_preserve_config(tmp_path: Path) -> None:
     assert loaded.config.extraction.llm.provider == "mistral"
     assert loaded.config.extraction.llm.model == "mistral-small-latest"
     assert loaded.config.extraction.llm.record_extraction_artifacts is True
+    assert loaded.config.extraction.llm.record_raw_response_text is True
+    assert loaded.config.extraction.llm.record_paragraph_text is True
+    assert loaded.config.extraction.llm.record_paragraph_metadata is True
     assert loaded.config.extraction.llm.artifact_dir == ".tmp-artifacts"
     assert loaded.config.label_assignment.max_labels_per_paragraph == 1
 

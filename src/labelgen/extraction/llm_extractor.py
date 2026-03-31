@@ -392,9 +392,9 @@ class LLMConceptExtractor(ConceptExtractor):
             "model": self._config.llm.model,
             "prompt_version": self._config.llm.prompt_version,
             "prompt_template": self._config.llm.prompt_template,
-            "messages": payload.messages,
-            "paragraphs": [asdict(paragraph) for paragraph in paragraphs],
-            "raw_response_text": payload.raw_response_text,
+            "messages": self._artifact_messages(payload.messages),
+            "paragraphs": [self._artifact_paragraph(paragraph) for paragraph in paragraphs],
+            "raw_response_text": self._artifact_raw_response_text(payload.raw_response_text),
             "parsed_concepts": payload.concept_lists,
             "mentions": [asdict(mention) for mention in mentions],
         }
@@ -441,15 +441,50 @@ class LLMConceptExtractor(ConceptExtractor):
             "prompt_version": self._config.llm.prompt_version,
             "prompt_template": self._config.llm.prompt_template,
             "cache_digest": cache_digest,
-            "messages": messages,
-            "paragraphs": [asdict(paragraph) for paragraph in paragraphs],
-            "raw_response_text": raw_response_text,
+            "messages": self._artifact_messages(messages),
+            "paragraphs": [self._artifact_paragraph(paragraph) for paragraph in paragraphs],
+            "raw_response_text": self._artifact_raw_response_text(raw_response_text),
             "error_message": error_message,
         }
         artifact_path.write_text(
             json.dumps(self._json_safe_value(artifact_payload), indent=2),
             encoding="utf-8",
         )
+
+    def _artifact_messages(self, messages: list[dict[str, str]]) -> list[dict[str, str]]:
+        """Return artifact-safe messages based on paragraph text recording settings."""
+
+        if self._config.llm.record_paragraph_text:
+            return messages
+        sanitized: list[dict[str, str]] = []
+        for index, message in enumerate(messages):
+            if index == 0:
+                sanitized.append(dict(message))
+            else:
+                sanitized.append(
+                    {
+                        "role": message["role"],
+                        "content": "[omitted because record_paragraph_text=False]",
+                    }
+                )
+        return sanitized
+
+    def _artifact_paragraph(self, paragraph: Paragraph) -> dict[str, Any]:
+        """Return an artifact-safe paragraph representation."""
+
+        payload: dict[str, Any] = {"id": paragraph.id}
+        if self._config.llm.record_paragraph_text:
+            payload["text"] = paragraph.text
+        if self._config.llm.record_paragraph_metadata:
+            payload["metadata"] = paragraph.metadata
+        return payload
+
+    def _artifact_raw_response_text(self, raw_response_text: str | None) -> str | None:
+        """Return raw response text only when explicitly enabled."""
+
+        if not self._config.llm.record_raw_response_text:
+            return None
+        return raw_response_text
 
     def _effective_prompt_template(self) -> str:
         """Return the prompt template that is actually used for extraction."""

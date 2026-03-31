@@ -27,6 +27,12 @@ class LLMExtractionConfig:
         cache_dir: Cache directory for parsed LLM extraction outputs.
         record_extraction_artifacts: Write structured per-batch extraction
             artifacts for audit and experiment analysis.
+        record_raw_response_text: Include raw provider response text in optional
+            extraction artifacts.
+        record_paragraph_text: Include original paragraph text in optional
+            extraction artifacts.
+        record_paragraph_metadata: Include paragraph metadata in optional
+            extraction artifacts.
         artifact_dir: Directory used for optional structured extraction
             artifacts.
         prompt_version: Prompt version identifier that participates in cache keys.
@@ -48,6 +54,9 @@ class LLMExtractionConfig:
     cache_enabled: bool = True
     cache_dir: str | None = ".labelgen-cache"
     record_extraction_artifacts: bool = False
+    record_raw_response_text: bool = False
+    record_paragraph_text: bool = False
+    record_paragraph_metadata: bool = False
     artifact_dir: str | None = ".labelgen-artifacts"
     prompt_version: str = "v1"
     prompt_template: str | None = None
