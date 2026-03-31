@@ -48,6 +48,21 @@ dev = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/labelgen"]
 
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src/labelgen",
+  "/README.md",
+  "/LICENSE",
+  "/pyproject.toml",
+]
+exclude = [
+  "/docs",
+  "/tests",
+  "/examples",
+  "/experiment",
+  "/WORKSPACE.md",
+]
+
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
