@@ -52,7 +52,7 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
 
         api_key = self._resolve_api_key(config)
         url = self._resolve_chat_completions_url(config)
-        payload = {
+        payload: dict[str, Any] = {
             "model": config.model,
             "messages": messages,
             "temperature": config.temperature,

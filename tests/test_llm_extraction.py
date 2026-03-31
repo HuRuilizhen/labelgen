@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -21,15 +22,18 @@ class FakeLLMProviderClient(LLMProviderClient):
         self.payload = payload
         self.call_count = 0
         self.messages: list[dict[str, str]] = []
+        self.response_schema: dict[str, object] | None = None
 
     def complete_chat(
         self,
         *,
         messages: list[dict[str, str]],
         config: object,
+        response_schema: dict[str, object] | None = None,
     ) -> str:
         self.messages = messages
         del config
+        self.response_schema = response_schema
         self.call_count += 1
         if isinstance(self.payload, str):
             return self.payload
@@ -90,6 +94,26 @@ def test_llm_extractor_default_prompt_includes_exact_paragraph_count(tmp_path: P
     assert '{"paragraphs": [["concept 1", "concept 2"]]}' in prompt
     assert '{"paragraphs": [[]]}' in prompt
     assert "Do not return extra arrays" in prompt
+
+
+def test_llm_extractor_passes_structured_schema_to_provider(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_enabled = False
+    config.extraction.llm.max_concepts_per_paragraph = 3
+    client = FakeLLMProviderClient({"paragraphs": [["OpenAI platform"]]})
+    extractor = LLMConceptExtractor(config.extraction, client=client)
+
+    extractor.extract([Paragraph(id="p1", text="OpenAI builds developer tooling.")])
+
+    assert client.response_schema is not None
+    assert client.response_schema["type"] == "object"
+    properties = cast(dict[str, Any], client.response_schema["properties"])
+    paragraphs_schema = cast(dict[str, Any], properties["paragraphs"])
+    assert paragraphs_schema["minItems"] == 1
+    assert paragraphs_schema["maxItems"] == 1
+    items_schema = cast(dict[str, Any], paragraphs_schema["items"])
+    assert items_schema["maxItems"] == 3
 
 
 def test_llm_extractor_uses_disk_cache(tmp_path: Path) -> None:
