@@ -142,7 +142,16 @@ default model for the public spaCy pipeline.
 - `cache_dir`: cache directory for parsed outputs
 - `record_extraction_artifacts`: write structured per-batch artifacts for audit
   and experiment analysis
+- `record_raw_response_text`: include raw provider response text in optional
+  artifacts
+- `record_paragraph_text`: include paragraph text in optional artifacts
+- `record_paragraph_metadata`: include paragraph metadata in optional artifacts
 - `artifact_dir`: artifact output directory
+
+Artifact recording is optional and remains disabled by default. The default
+artifact payload is intentionally conservative and does not include raw response
+text, paragraph text, or paragraph metadata unless those fields are explicitly
+enabled.
 
 ### Prompt Settings
 
@@ -153,6 +162,20 @@ default model for the public spaCy pipeline.
 Cache invalidation includes both `prompt_version` and the effective prompt text.
 This means changing either value invalidates old cache entries, and built-in
 prompt changes are still detected even when `prompt_template` is unset.
+
+### Provider Diagnostics
+
+The OpenAI-compatible provider layer surfaces more specific failure classes for
+LLM workflows:
+
+- configuration failures
+- transport failures
+- HTTP status failures
+- provider-response parse failures
+- retry exhaustion
+
+These failures preserve provider identity and expose additional context such as
+HTTP status code and a compact response summary when available.
 
 ## Result Models
 
@@ -197,3 +220,4 @@ installed. Missing models raise an explicit runtime error.
 When `extractor_mode="llm"`, provider configuration must be valid and the
 expected API key must be available. The LLM path does not silently fall back to
 spaCy or heuristic extraction.
+
