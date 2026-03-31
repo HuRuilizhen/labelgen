@@ -37,12 +37,6 @@ paragraphs = [
 
 generator = LabelGenerator(LabelGeneratorConfig())
 result = generator.fit_transform(paragraphs)
-
-for concept in result.concepts:
-    print(concept.normalized, concept.kind, concept.document_frequency, sep=" | ")
-
-for assignment in result.paragraph_labels:
-    print(assignment.paragraph_id, assignment.label_ids, assignment.label_scores)
 ```
 
 ### LLM extraction pipeline
@@ -66,51 +60,92 @@ result = generator.fit_transform(
 )
 ```
 
-The LLM extractor supports `openai`, `mistral`, and `qwen` style providers.
-Set the corresponding API key in the expected environment variable:
-
-- `OPENAI_API_KEY`
-- `MISTRAL_API_KEY`
-- `DASHSCOPE_API_KEY`
-
 ## Extraction Modes
 
 `LabelGeneratorConfig.extractor_mode` supports three modes:
 
 - `spacy`: default public extractor using spaCy noun chunks and entities
 - `heuristic`: deterministic fallback extractor using rule-based spans
-- `llm`: provider-backed concept extraction using structured JSON output
+- `llm`: provider-backed concept extraction using a unified OpenAI-compatible
+  chat-completions client
 
 If `extractor_mode` is unset, the legacy `use_nlp_extractor` compatibility flag
 is still respected. New code should prefer `extractor_mode`.
 
-## LLM Configuration Notes
+## LLM Provider Model
 
-The LLM extraction path is opt-in and synchronous. Key settings live under
-`config.extraction.llm`:
+The LLM extraction path is opt-in and synchronous. The current provider layer is
+unified around one OpenAI-compatible client and supports:
+
+- `openai`
+- `mistral`
+- `qwen`
+
+Configure the provider and model under `config.extraction.llm`:
 
 - `provider`
 - `model`
 - `api_key_env_var`
 - `base_url`
+- `organization`
+- `timeout_seconds`
+- `max_retries`
 - `temperature`
 - `max_output_tokens`
 - `batch_size`
 - `max_concepts_per_paragraph`
-- `cache_enabled`
-- `cache_dir`
-- `record_extraction_artifacts`
-- `artifact_dir`
-- `prompt_version`
-- `prompt_template`
 
-Cache and artifact behavior:
+Set the corresponding API key in the expected environment variable:
+
+- `OPENAI_API_KEY`
+- `MISTRAL_API_KEY`
+- `DASHSCOPE_API_KEY`
+
+## Structured Output And Reliability
+
+The LLM extractor now prefers provider-enforced structured output when the
+configured endpoint supports OpenAI-compatible JSON schema response formatting.
+
+- prompt guidance is still used, but it is no longer the only output contract
+- structured output is enforced first when available
+- if an OpenAI-compatible endpoint rejects JSON-schema response formatting, the
+  client falls back to the prompt-only request on the same LLM path
+- the extractor does not silently fall back to `spacy` or `heuristic`
+
+## Recommended LLM Settings
+
+### Low-risk evaluation workflow
+
+For routine evaluation runs, prefer a conservative configuration:
+
+- `temperature = 0.0`
+- `batch_size = 1` or a small batch size
+- `cache_enabled = True`
+- `record_extraction_artifacts = False`
+
+This keeps runs reproducible and avoids writing extra local artifacts unless you
+actually need them.
+
+### Debugging-oriented workflow
+
+When you need to inspect provider behavior, you can enable artifacts:
+
+- `record_extraction_artifacts = True`
+- `record_raw_response_text = True` only when raw provider output is needed
+- `record_paragraph_text = True` only when paragraph text is safe to store
+- `record_paragraph_metadata = True` only when metadata is safe to store
+
+Artifact recording is optional and should stay disabled by default for routine
+usage.
+
+## Cache And Artifact Notes
 
 - `cache_enabled=True` stores parsed concept lists on disk and avoids repeated
   provider calls for the same effective request
-- `record_extraction_artifacts=True` writes structured per-batch extraction
-  artifacts for audit and experiment analysis
-- both are optional and can be disabled independently
+- cache invalidation includes both `prompt_version` and the effective prompt
+  text
+- artifacts are intended for local evaluation and debugging workflows, not as a
+  default production feature
 
 ## Public API
 
@@ -140,5 +175,4 @@ Runnable examples are available in [`examples/`](examples/):
 - `use_graph_community_detection=True` uses Leiden community detection
 - `use_graph_community_detection=False` uses deterministic connected components
 - the default spaCy path requires the configured spaCy model to be installed
-- the LLM path does not silently fall back to spaCy or heuristic extraction
-
+- the LLM path requires valid provider configuration and credentials
