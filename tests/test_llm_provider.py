@@ -51,6 +51,37 @@ class RecordingProviderClient(OpenAICompatibleProviderClient):
         }
 
 
+class OptionalAuthRecordingProviderClient(OpenAICompatibleProviderClient):
+    """Recording client that preserves provider-specific optional auth behavior."""
+
+    def __init__(self) -> None:
+        self.last_url: str | None = None
+        self.last_headers: dict[str, str] | None = None
+        self.last_payload: dict[str, Any] | None = None
+
+    def _post_json(
+        self,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        *,
+        timeout: float,
+    ) -> dict[str, Any]:
+        del timeout
+        self.last_url = url
+        self.last_headers = headers
+        self.last_payload = payload
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"paragraphs": [["OpenAI platform"]]}'
+                    }
+                }
+            ]
+        }
+
+
 def test_openai_compatible_provider_sends_structured_output_request() -> None:
     config = LabelGeneratorConfig(extractor_mode="llm")
     config.extraction.llm.provider = "openai"
@@ -251,3 +282,34 @@ def test_openai_compatible_provider_preserves_transport_diagnostics() -> None:
         assert "qwen" in str(error)
     else:
         raise AssertionError("Expected retry exhaustion with a transport error.")
+
+
+def test_openai_compatible_provider_uses_default_ollama_base_url() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "ollama"
+    config.extraction.llm.model = "llama3.1"
+    client = RecordingProviderClient()
+
+    content = client.complete_chat(
+        messages=[{"role": "user", "content": "Extract concepts."}],
+        config=config.extraction.llm,
+    )
+
+    assert content == '{"paragraphs": [["OpenAI platform"]]}'
+    assert client.last_url == "http://localhost:11434/v1/chat/completions"
+
+
+def test_openai_compatible_provider_does_not_require_ollama_api_key() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "ollama"
+    config.extraction.llm.model = "llama3.1"
+    config.extraction.llm.api_key_env_var = "LABELGEN_UNUSED_OLLAMA_KEY"
+    client = OptionalAuthRecordingProviderClient()
+
+    client.complete_chat(
+        messages=[{"role": "user", "content": "Extract concepts."}],
+        config=config.extraction.llm,
+    )
+
+    assert client.last_headers is not None
+    assert "Authorization" not in client.last_headers
