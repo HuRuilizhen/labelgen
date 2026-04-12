@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 ExtractorMode = Literal["spacy", "heuristic", "llm"]
-LLMProviderName = Literal["openai", "mistral", "qwen"]
+LLMProviderName = Literal["openai", "mistral", "qwen", "ollama"]
 
 
 @dataclass(slots=True)

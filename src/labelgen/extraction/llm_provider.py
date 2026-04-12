@@ -16,11 +16,13 @@ _DEFAULT_BASE_URLS: dict[LLMProviderName, str] = {
     "openai": "https://api.openai.com/v1",
     "mistral": "https://api.mistral.ai/v1",
     "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "ollama": "http://localhost:11434/v1",
 }
 _DEFAULT_API_KEY_ENV_VARS: dict[LLMProviderName, str] = {
     "openai": "OPENAI_API_KEY",
     "mistral": "MISTRAL_API_KEY",
     "qwen": "DASHSCOPE_API_KEY",
+    "ollama": "OLLAMA_API_KEY",
 }
 
 
@@ -103,9 +105,10 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
         api_key = self._resolve_api_key(config)
         url = self._resolve_chat_completions_url(config)
         headers = {
-            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         if config.organization:
             headers["OpenAI-Organization"] = config.organization
 
@@ -251,6 +254,8 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
 
         env_var = config.api_key_env_var or _DEFAULT_API_KEY_ENV_VARS[config.provider]
         api_key = os.environ.get(env_var)
+        if config.provider == "ollama":
+            return api_key or ""
         if not api_key:
             raise LLMProviderConfigurationError(
                 config.provider,
@@ -325,6 +330,6 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
 def build_provider_client(config: LLMExtractionConfig) -> LLMProviderClient:
     """Build the provider client for the configured provider."""
 
-    if config.provider in {"openai", "mistral", "qwen"}:
+    if config.provider in {"openai", "mistral", "qwen", "ollama"}:
         return OpenAICompatibleProviderClient()
     raise RuntimeError(f"Unsupported LLM provider '{config.provider}'.")
