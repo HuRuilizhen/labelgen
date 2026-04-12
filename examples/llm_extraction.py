@@ -9,6 +9,11 @@ Example:
     export LABELGEN_LLM_MODEL=gpt-5-mini
     export OPENAI_API_KEY=...
     python examples/llm_extraction.py
+
+    export LABELGEN_LLM_PROVIDER=ollama
+    export LABELGEN_LLM_MODEL=llama3.1
+    export LABELGEN_LLM_BASE_URL=http://localhost:11434/v1
+    python examples/llm_extraction.py
 """
 
 from __future__ import annotations
@@ -58,6 +63,8 @@ def main() -> None:
     print(f"Detector: {generator.detector_name}")
     print(f"Provider: {provider}")
     print(f"Model: {model}")
+    if base_url:
+        print(f"Base URL: {base_url}")
     print("Concepts:")
     for concept in result.concepts:
         print(
