@@ -161,6 +161,36 @@ def test_llm_extractor_accepts_json_with_trailing_garbage(tmp_path: Path) -> Non
     assert mentions == []
 
 
+def test_llm_extractor_accepts_markdown_fenced_json(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_dir = str(tmp_path)
+    client = FakeLLMProviderClient('```json\n{"paragraphs": [[]]}\n```')
+    extractor = LLMConceptExtractor(config.extraction, client=client)
+
+    mentions = extractor.extract([Paragraph(id="p1", text="Boilerplate paragraph.")])
+
+    assert mentions == []
+
+
+def test_llm_extractor_prefers_last_valid_paragraphs_object_in_free_text(
+    tmp_path: Path,
+) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_dir = str(tmp_path)
+    client = FakeLLMProviderClient(
+        "Reasoning:\n"
+        'placeholder {"paragraphs": [["concept 1"]]}\n'
+        'final {"paragraphs": [["OpenAI platform"]]}'
+    )
+    extractor = LLMConceptExtractor(config.extraction, client=client)
+
+    mentions = extractor.extract([Paragraph(id="p1", text="OpenAI builds APIs for developers.")])
+
+    assert [mention.normalized for mention in mentions] == ["openai platform"]
+
+
 def test_llm_extractor_recovers_missing_closing_delimiters(tmp_path: Path) -> None:
     config = LabelGeneratorConfig(extractor_mode="llm")
     config.extraction.llm.model = "test-model"
@@ -329,6 +359,30 @@ def test_llm_cache_key_includes_effective_default_prompt(
         "labelgen.extraction.llm_extractor._DEFAULT_PROMPT_TEMPLATE",
         "Different built-in prompt.\n{paragraphs_block}",
     )
+    second_client = FakeLLMProviderClient({"paragraphs": [["OpenAI", "developer tooling"]]})
+    second_extractor = LLMConceptExtractor(config.extraction, client=second_client)
+    second_mentions = second_extractor.extract(paragraphs)
+
+    assert [mention.normalized for mention in first_mentions] == ["openai"]
+    assert [mention.normalized for mention in second_mentions] == [
+        "openai",
+        "developer tooling",
+    ]
+    assert first_client.call_count == 1
+    assert second_client.call_count == 1
+
+
+def test_llm_cache_key_includes_output_contract_mode(tmp_path: Path) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_dir = str(tmp_path / "cache")
+    paragraphs = [Paragraph(id="p1", text="OpenAI builds developer tooling.")]
+
+    first_client = FakeLLMProviderClient({"paragraphs": [["OpenAI"]]})
+    extractor = LLMConceptExtractor(config.extraction, client=first_client)
+    first_mentions = extractor.extract(paragraphs)
+
+    config.extraction.llm.output_contract_mode = "prompt_only"
     second_client = FakeLLMProviderClient({"paragraphs": [["OpenAI", "developer tooling"]]})
     second_extractor = LLMConceptExtractor(config.extraction, client=second_client)
     second_mentions = second_extractor.extract(paragraphs)
