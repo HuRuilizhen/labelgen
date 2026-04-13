@@ -142,7 +142,11 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
                         break
                     last_error = self._http_status_error(config.provider, error)
                     if attempt >= config.max_retries:
-                        break
+                        raise LLMProviderRetryExhaustedError(
+                            config.provider,
+                            f"LLM provider '{config.provider}' request failed after retries.",
+                            last_error=last_error,
+                        ) from last_error
                     time.sleep(min(2**attempt, 5))
                 except URLError as error:
                     last_error = LLMProviderTransportError(
@@ -153,7 +157,11 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
                         ),
                     )
                     if attempt >= config.max_retries:
-                        break
+                        raise LLMProviderRetryExhaustedError(
+                            config.provider,
+                            f"LLM provider '{config.provider}' request failed after retries.",
+                            last_error=last_error,
+                        ) from last_error
                     time.sleep(min(2**attempt, 5))
                 except TimeoutError:
                     last_error = LLMProviderTransportError(
@@ -161,7 +169,11 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
                         f"LLM provider '{config.provider}' request timed out.",
                     )
                     if attempt >= config.max_retries:
-                        break
+                        raise LLMProviderRetryExhaustedError(
+                            config.provider,
+                            f"LLM provider '{config.provider}' request failed after retries.",
+                            last_error=last_error,
+                        ) from last_error
                     time.sleep(min(2**attempt, 5))
                 except RuntimeError as error:
                     if self._should_try_weaker_contract_after_parse_failure(
@@ -181,7 +193,11 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
                         f"LLM provider '{config.provider}' returned an invalid response: {error}",
                     )
                     if attempt >= config.max_retries:
-                        break
+                        raise LLMProviderRetryExhaustedError(
+                            config.provider,
+                            f"LLM provider '{config.provider}' request failed after retries.",
+                            last_error=last_error,
+                        ) from last_error
                     time.sleep(min(2**attempt, 5))
         raise LLMProviderRetryExhaustedError(
             config.provider,

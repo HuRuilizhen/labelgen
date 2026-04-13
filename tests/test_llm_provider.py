@@ -448,6 +448,62 @@ def test_openai_compatible_provider_preserves_http_status_diagnostics() -> None:
         raise AssertionError("Expected retry exhaustion with an HTTP status error.")
 
 
+class CountingHTTPErrorProviderClient(OpenAICompatibleProviderClient):
+    """Provider client that counts attempts before returning a non-fallback HTTP error."""
+
+    def __init__(self) -> None:
+        self.payloads: list[dict[str, Any]] = []
+
+    def _resolve_api_key(self, config: object) -> str:
+        del config
+        return "test-key"
+
+    def _post_json(
+        self,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        *,
+        timeout: float,
+    ) -> dict[str, Any]:
+        del url, headers, timeout
+        self.payloads.append(payload)
+        raise HTTPError(
+            url="https://example.invalid/v1/chat/completions",
+            code=429,
+            msg="Too Many Requests",
+            hdrs=Message(),
+            fp=None,
+        )
+
+
+def test_openai_compatible_provider_does_not_try_weaker_contracts_after_429() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "openai"
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.max_retries = 0
+    client = CountingHTTPErrorProviderClient()
+    schema = {
+        "type": "object",
+        "properties": {"paragraphs": {"type": "array"}},
+        "required": ["paragraphs"],
+        "additionalProperties": False,
+    }
+
+    try:
+        client.complete_chat(
+            messages=[{"role": "user", "content": "Extract concepts."}],
+            config=config.extraction.llm,
+            response_schema=schema,
+        )
+    except LLMProviderRetryExhaustedError as error:
+        assert isinstance(error.last_error, LLMProviderHTTPStatusError)
+        assert len(client.payloads) == 1
+        assert client.payloads[0]["response_format"]["type"] == "json_schema"
+    else:
+        raise AssertionError("Expected retry exhaustion for a non-fallback HTTP error.")
+
+
 class AlwaysURLErrorProviderClient(OpenAICompatibleProviderClient):
     """Provider client that always raises a transport error."""
 
