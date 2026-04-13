@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from email.message import Message
-from typing import Any
+from typing import Any, cast
 from urllib.error import HTTPError, URLError
 
 from labelgen import LabelGeneratorConfig
@@ -115,6 +115,40 @@ def test_openai_compatible_provider_sends_structured_output_request() -> None:
     }
 
 
+def test_openai_compatible_provider_can_use_json_object_mode() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "openai"
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.output_contract_mode = "json_object"
+    client = RecordingProviderClient()
+
+    content = client.complete_chat(
+        messages=[{"role": "user", "content": "Extract concepts."}],
+        config=config.extraction.llm,
+    )
+
+    assert content == '{"paragraphs": [["OpenAI platform"]]}'
+    assert client.last_payload is not None
+    assert client.last_payload["response_format"] == {"type": "json_object"}
+
+
+def test_openai_compatible_provider_can_use_prompt_only_mode() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "openai"
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.output_contract_mode = "prompt_only"
+    client = RecordingProviderClient()
+
+    content = client.complete_chat(
+        messages=[{"role": "user", "content": "Extract concepts."}],
+        config=config.extraction.llm,
+    )
+
+    assert content == '{"paragraphs": [["OpenAI platform"]]}'
+    assert client.last_payload is not None
+    assert "response_format" not in client.last_payload
+
+
 class StructuredFallbackProviderClient(OpenAICompatibleProviderClient):
     """Provider client that rejects structured output once, then accepts prompt-only."""
 
@@ -173,9 +207,179 @@ def test_openai_compatible_provider_falls_back_when_json_schema_is_rejected() ->
     )
 
     assert content == '{"paragraphs": [["OpenAI platform"]]}'
-    assert len(client.payloads) == 2
+    assert len(client.payloads) == 3
     assert "response_format" in client.payloads[0]
-    assert "response_format" not in client.payloads[1]
+    assert client.payloads[1]["response_format"] == {"type": "json_object"}
+    assert "response_format" not in client.payloads[2]
+
+
+class JsonObjectFallbackProviderClient(OpenAICompatibleProviderClient):
+    """Provider client that accepts json_object after json_schema is rejected."""
+
+    def __init__(self) -> None:
+        self.payloads: list[dict[str, Any]] = []
+
+    def _resolve_api_key(self, config: object) -> str:
+        del config
+        return "test-key"
+
+    def _post_json(
+        self,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        *,
+        timeout: float,
+    ) -> dict[str, Any]:
+        del url, headers, timeout
+        self.payloads.append(payload)
+        response_format = payload.get("response_format")
+        if isinstance(response_format, dict):
+            response_format_dict = cast(dict[str, Any], response_format)
+        else:
+            response_format_dict = None
+        if (
+            response_format_dict is not None
+            and response_format_dict.get("type") == "json_schema"
+        ):
+            raise HTTPError(
+                url="https://example.invalid/v1/chat/completions",
+                code=400,
+                msg="Unsupported response_format",
+                hdrs=Message(),
+                fp=None,
+            )
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"paragraphs": [["OpenAI platform"]]}'
+                    }
+                }
+            ]
+        }
+
+
+def test_openai_compatible_provider_stops_auto_fallback_at_json_object() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "ollama"
+    config.extraction.llm.model = "qwen3.5:4b"
+    client = JsonObjectFallbackProviderClient()
+    schema = {
+        "type": "object",
+        "properties": {"paragraphs": {"type": "array"}},
+        "required": ["paragraphs"],
+        "additionalProperties": False,
+    }
+
+    content = client.complete_chat(
+        messages=[{"role": "user", "content": "Extract concepts."}],
+        config=config.extraction.llm,
+        response_schema=schema,
+    )
+
+    assert content == '{"paragraphs": [["OpenAI platform"]]}'
+    assert len(client.payloads) == 2
+    assert client.payloads[1]["response_format"] == {"type": "json_object"}
+
+
+class EmptyContentFallbackProviderClient(OpenAICompatibleProviderClient):
+    """Provider client that returns empty content until prompt-only mode is used."""
+
+    def __init__(self) -> None:
+        self.payloads: list[dict[str, Any]] = []
+
+    def _resolve_api_key(self, config: object) -> str:
+        del config
+        return ""
+
+    def _post_json(
+        self,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        *,
+        timeout: float,
+    ) -> dict[str, Any]:
+        del url, headers, timeout
+        self.payloads.append(payload)
+        if "response_format" in payload:
+            return {"choices": [{"message": {"content": ""}}]}
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"paragraphs": [["OpenAI platform"]]}'
+                    }
+                }
+            ]
+        }
+
+
+def test_openai_compatible_provider_tries_weaker_contracts_after_empty_content() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "ollama"
+    config.extraction.llm.model = "qwen3.5:4b"
+    client = EmptyContentFallbackProviderClient()
+    schema = {
+        "type": "object",
+        "properties": {"paragraphs": {"type": "array"}},
+        "required": ["paragraphs"],
+        "additionalProperties": False,
+    }
+
+    content = client.complete_chat(
+        messages=[{"role": "user", "content": "Extract concepts."}],
+        config=config.extraction.llm,
+        response_schema=schema,
+    )
+
+    assert content == '{"paragraphs": [["OpenAI platform"]]}'
+    assert len(client.payloads) == 3
+    assert client.payloads[1]["response_format"] == {"type": "json_object"}
+    assert "response_format" not in client.payloads[2]
+
+
+class ReasoningOnlyProviderClient(OpenAICompatibleProviderClient):
+    """Provider client that returns reasoning text when content is empty."""
+
+    def _resolve_api_key(self, config: object) -> str:
+        del config
+        return ""
+
+    def _post_json(
+        self,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        *,
+        timeout: float,
+    ) -> dict[str, Any]:
+        del url, headers, payload, timeout
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": "",
+                        "reasoning": '{"paragraphs": [["OpenAI platform"]]}',
+                    }
+                }
+            ]
+        }
+
+
+def test_openai_compatible_provider_can_fall_back_to_reasoning_text() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "ollama"
+    config.extraction.llm.model = "qwen3.5:4b"
+    client = ReasoningOnlyProviderClient()
+
+    content = client.complete_chat(
+        messages=[{"role": "user", "content": "Extract concepts."}],
+        config=config.extraction.llm,
+    )
+
+    assert content == '{"paragraphs": [["OpenAI platform"]]}'
 
 
 def test_openai_compatible_provider_raises_configuration_error_for_missing_api_key() -> None:
