@@ -221,6 +221,10 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
             "temperature": config.temperature,
             "max_tokens": config.max_output_tokens,
         }
+        if config.provider == "ollama":
+            # Local reasoning-capable models often spend the output budget on
+            # thinking traces unless reasoning is disabled explicitly.
+            payload["reasoning_effort"] = "none"
         response_format = self._response_format_for_contract(
             contract_mode,
             provider=config.provider,
