@@ -557,6 +557,8 @@ def test_openai_compatible_provider_uses_default_ollama_base_url() -> None:
 
     assert content == '{"paragraphs": [["OpenAI platform"]]}'
     assert client.last_url == "http://localhost:11434/v1/chat/completions"
+    assert client.last_payload is not None
+    assert client.last_payload["reasoning_effort"] == "none"
 
 
 def test_openai_compatible_provider_does_not_require_ollama_api_key() -> None:
@@ -573,3 +575,18 @@ def test_openai_compatible_provider_does_not_require_ollama_api_key() -> None:
 
     assert client.last_headers is not None
     assert "Authorization" not in client.last_headers
+
+
+def test_openai_compatible_provider_does_not_disable_reasoning_for_cloud_providers() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "openai"
+    config.extraction.llm.model = "test-model"
+    client = RecordingProviderClient()
+
+    client.complete_chat(
+        messages=[{"role": "user", "content": "Extract concepts."}],
+        config=config.extraction.llm,
+    )
+
+    assert client.last_payload is not None
+    assert "reasoning_effort" not in client.last_payload
