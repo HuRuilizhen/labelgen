@@ -117,6 +117,44 @@ def test_summarize_run_reports_basic_benchmark_fields() -> None:
     assert len(summary["preview"]) == 2
 
 
+def test_summarize_run_builds_preview_from_cleaned_result_paragraphs() -> None:
+    config = LabelGeneratorConfig(
+        use_nlp_extractor=False,
+        use_graph_community_detection=False,
+    )
+    generator = LabelGenerator(config)
+    paragraphs = run_benchmark.build_paragraphs(
+        [
+            {"id": "url-only", "text": "https://example.com/support"},
+            {"id": "kept", "text": "OpenAI builds language models."},
+        ]
+    )
+    result = generator.fit_transform(paragraphs)
+
+    args = argparse.Namespace(
+        extractor="heuristic",
+        provider=None,
+        model=None,
+        output_contract_mode="auto",
+        sample_preview=2,
+        batch_size=8,
+        max_output_tokens=512,
+        timeout_seconds=30.0,
+        max_concepts_per_paragraph=12,
+    )
+    summary = run_benchmark.summarize_run(
+        args=args,
+        paragraphs=paragraphs,
+        result=result,
+    )
+
+    assert summary["paragraph_count"] == 2
+    assert len(result.paragraphs) == 1
+    assert len(summary["preview"]) == 1
+    assert summary["preview"][0]["source_id"] == "kept"
+    assert summary["preview"][0]["text"] == "OpenAI builds language models"
+
+
 def test_summarize_results_and_markdown_render() -> None:
     summary = summarize_results_module.summarize_results(
         [

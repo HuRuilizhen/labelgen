@@ -180,7 +180,6 @@ def build_config(args: argparse.Namespace) -> LabelGeneratorConfig:
 
 
 def build_preview(
-    paragraphs: list[Paragraph],
     result: Any,
     *,
     limit: int,
@@ -193,7 +192,11 @@ def build_preview(
         mention_map.setdefault(mention.paragraph_id, []).append(mention.normalized)
 
     preview: list[dict[str, Any]] = []
-    for paragraph, labels in zip(paragraphs[:limit], result.paragraph_labels[:limit], strict=True):
+    for paragraph, labels in zip(
+        result.paragraphs[:limit],
+        result.paragraph_labels[:limit],
+        strict=True,
+    ):
         preview.append(
             {
                 "paragraph_id": labels.paragraph_id,
@@ -247,7 +250,7 @@ def summarize_run(
         "average_mentions_per_paragraph": (
             mention_count / paragraph_count if paragraph_count else 0.0
         ),
-        "preview": build_preview(paragraphs, result, limit=args.sample_preview),
+        "preview": build_preview(result, limit=args.sample_preview),
         "config": asdict(build_config(args)),
     }
 
