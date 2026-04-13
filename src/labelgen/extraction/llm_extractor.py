@@ -254,7 +254,10 @@ class LLMConceptExtractor(ConceptExtractor):
         """Parse JSON or extract a JSON object from a textual provider response."""
 
         decoder = json.JSONDecoder()
-        stripped = content.strip()
+        stripped = self._strip_markdown_json_fence(content).strip()
+        extracted = self._extract_last_paragraphs_object(stripped, decoder)
+        if extracted is not None:
+            return extracted
         try:
             data, _ = decoder.raw_decode(stripped)
         except json.JSONDecodeError:
@@ -276,6 +279,43 @@ class LLMConceptExtractor(ConceptExtractor):
         if not isinstance(data, dict):
             raise RuntimeError("LLM extraction response must decode to a JSON object.")
         return cast(dict[str, Any], data)
+
+    def _extract_last_paragraphs_object(
+        self,
+        content: str,
+        decoder: json.JSONDecoder,
+    ) -> dict[str, Any] | None:
+        """Extract the last JSON object containing a paragraphs field from free text."""
+
+        candidates: list[dict[str, Any]] = []
+        for start_index, char in enumerate(content):
+            if char != "{":
+                continue
+            try:
+                parsed, _ = decoder.raw_decode(content[start_index:])
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(parsed, dict):
+                continue
+            parsed_dict = cast(dict[str, Any], parsed)
+            if "paragraphs" in parsed_dict:
+                candidates.append(parsed_dict)
+        if not candidates:
+            return None
+        return candidates[-1]
+
+    def _strip_markdown_json_fence(self, content: str) -> str:
+        """Strip one surrounding fenced code block when the provider returns one."""
+
+        stripped = content.strip()
+        if not stripped.startswith("```"):
+            return stripped
+        lines = stripped.splitlines()
+        if len(lines) < 3:
+            return stripped
+        if not lines[-1].strip().startswith("```"):
+            return stripped
+        return "\n".join(lines[1:-1]).strip()
 
     def _recover_partial_json_object(
         self,
@@ -329,6 +369,7 @@ class LLMConceptExtractor(ConceptExtractor):
         key_payload = {
             "provider": self._config.llm.provider,
             "model": self._config.llm.model,
+            "output_contract_mode": self._config.llm.output_contract_mode,
             "prompt_version": self._config.llm.prompt_version,
             "effective_prompt_template": self._effective_prompt_template(),
             "temperature": self._config.llm.temperature,
