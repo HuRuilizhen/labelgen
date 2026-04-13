@@ -10,7 +10,7 @@ from typing import Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from labelgen.config import LLMExtractionConfig, LLMProviderName
+from labelgen.config import LLMExtractionConfig, LLMOutputContractMode, LLMProviderName
 
 _DEFAULT_BASE_URLS: dict[LLMProviderName, str] = {
     "openai": "https://api.openai.com/v1",
@@ -113,57 +113,76 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
             headers["OpenAI-Organization"] = config.organization
 
         last_error: Exception | None = None
-        allow_prompt_only_fallback = response_schema is not None
-        for attempt in range(config.max_retries + 1):
-            try:
-                payload = self._build_payload(
-                    messages=messages,
-                    config=config,
-                    response_schema=response_schema,
-                )
-                response = self._post_json(url, headers, payload, timeout=config.timeout_seconds)
-                return self._extract_content(response)
-            except HTTPError as error:
-                last_error = error
-                if (
-                    allow_prompt_only_fallback
-                    and response_schema is not None
-                    and self._supports_prompt_only_fallback(error)
-                ):
-                    response_schema = None
-                    allow_prompt_only_fallback = False
-                    continue
-                last_error = self._http_status_error(config.provider, error)
-                if attempt >= config.max_retries:
-                    break
-                time.sleep(min(2**attempt, 5))
-            except URLError as error:
-                last_error = LLMProviderTransportError(
-                    config.provider,
-                    (
-                        f"LLM provider '{config.provider}' transport failure: "
-                        f"{self._url_error_reason(error)}"
-                    ),
-                )
-                if attempt >= config.max_retries:
-                    break
-                time.sleep(min(2**attempt, 5))
-            except TimeoutError:
-                last_error = LLMProviderTransportError(
-                    config.provider,
-                    f"LLM provider '{config.provider}' request timed out.",
-                )
-                if attempt >= config.max_retries:
-                    break
-                time.sleep(min(2**attempt, 5))
-            except RuntimeError as error:
-                last_error = LLMProviderParseError(
-                    config.provider,
-                    f"LLM provider '{config.provider}' returned an invalid response: {error}",
-                )
-                if attempt >= config.max_retries:
-                    break
-                time.sleep(min(2**attempt, 5))
+        for contract_mode in self._resolve_contract_sequence(
+            config.output_contract_mode,
+            response_schema=response_schema,
+        ):
+            for attempt in range(config.max_retries + 1):
+                try:
+                    payload = self._build_payload(
+                        messages=messages,
+                        config=config,
+                        response_schema=response_schema,
+                        contract_mode=contract_mode,
+                    )
+                    response = self._post_json(
+                        url,
+                        headers,
+                        payload,
+                        timeout=config.timeout_seconds,
+                    )
+                    return self._extract_content(response)
+                except HTTPError as error:
+                    if self._should_try_weaker_contract(
+                        error,
+                        current_mode=contract_mode,
+                        configured_mode=config.output_contract_mode,
+                    ):
+                        last_error = self._http_status_error(config.provider, error)
+                        break
+                    last_error = self._http_status_error(config.provider, error)
+                    if attempt >= config.max_retries:
+                        break
+                    time.sleep(min(2**attempt, 5))
+                except URLError as error:
+                    last_error = LLMProviderTransportError(
+                        config.provider,
+                        (
+                            f"LLM provider '{config.provider}' transport failure: "
+                            f"{self._url_error_reason(error)}"
+                        ),
+                    )
+                    if attempt >= config.max_retries:
+                        break
+                    time.sleep(min(2**attempt, 5))
+                except TimeoutError:
+                    last_error = LLMProviderTransportError(
+                        config.provider,
+                        f"LLM provider '{config.provider}' request timed out.",
+                    )
+                    if attempt >= config.max_retries:
+                        break
+                    time.sleep(min(2**attempt, 5))
+                except RuntimeError as error:
+                    if self._should_try_weaker_contract_after_parse_failure(
+                        current_mode=contract_mode,
+                        configured_mode=config.output_contract_mode,
+                    ):
+                        last_error = LLMProviderParseError(
+                            config.provider,
+                            (
+                                f"LLM provider '{config.provider}' returned an invalid "
+                                f"response: {error}"
+                            ),
+                        )
+                        break
+                    last_error = LLMProviderParseError(
+                        config.provider,
+                        f"LLM provider '{config.provider}' returned an invalid response: {error}",
+                    )
+                    if attempt >= config.max_retries:
+                        break
+                    time.sleep(min(2**attempt, 5))
         raise LLMProviderRetryExhaustedError(
             config.provider,
             f"LLM provider '{config.provider}' request failed after retries.",
@@ -176,6 +195,7 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
         messages: list[dict[str, str]],
         config: LLMExtractionConfig,
         response_schema: dict[str, Any] | None,
+        contract_mode: LLMOutputContractMode,
     ) -> dict[str, Any]:
         """Build one chat-completions payload."""
 
@@ -185,9 +205,53 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
             "temperature": config.temperature,
             "max_tokens": config.max_output_tokens,
         }
-        if response_schema is not None:
-            payload["response_format"] = self._structured_response_format(response_schema)
+        response_format = self._response_format_for_contract(
+            contract_mode,
+            provider=config.provider,
+            response_schema=response_schema,
+        )
+        if response_format is not None:
+            payload["response_format"] = response_format
         return payload
+
+    def _resolve_contract_sequence(
+        self,
+        configured_mode: LLMOutputContractMode,
+        *,
+        response_schema: dict[str, Any] | None,
+    ) -> list[LLMOutputContractMode]:
+        """Return the ordered output-contract modes to try for one request."""
+
+        if configured_mode == "auto":
+            if response_schema is None:
+                return ["prompt_only"]
+            return ["json_schema", "json_object", "prompt_only"]
+        return [configured_mode]
+
+    def _response_format_for_contract(
+        self,
+        contract_mode: LLMOutputContractMode,
+        *,
+        provider: str,
+        response_schema: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        """Return the provider response-format payload for one contract mode."""
+
+        if contract_mode == "prompt_only":
+            return None
+        if contract_mode == "json_object":
+            return {"type": "json_object"}
+        if contract_mode == "json_schema":
+            if response_schema is None:
+                raise LLMProviderConfigurationError(
+                    provider,
+                    "json_schema output contracts require a response schema.",
+                )
+            return self._structured_response_format(response_schema)
+        raise LLMProviderConfigurationError(
+            provider,
+            f"Unsupported output contract mode: {contract_mode}.",
+        )
 
     def _structured_response_format(
         self,
@@ -205,9 +269,34 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
         }
 
     def _supports_prompt_only_fallback(self, error: HTTPError) -> bool:
-        """Return whether a structured-output rejection should retry without schema."""
+        """Return whether a contract rejection should retry with a weaker mode."""
 
         return error.code in {400, 404, 415, 422}
+
+    def _should_try_weaker_contract(
+        self,
+        error: HTTPError,
+        *,
+        current_mode: LLMOutputContractMode,
+        configured_mode: LLMOutputContractMode,
+    ) -> bool:
+        """Return whether auto mode should try a weaker output contract."""
+
+        if configured_mode != "auto":
+            return False
+        if current_mode == "prompt_only":
+            return False
+        return self._supports_prompt_only_fallback(error)
+
+    def _should_try_weaker_contract_after_parse_failure(
+        self,
+        *,
+        current_mode: LLMOutputContractMode,
+        configured_mode: LLMOutputContractMode,
+    ) -> bool:
+        """Return whether auto mode should try a weaker contract after parse failure."""
+
+        return configured_mode == "auto" and current_mode != "prompt_only"
 
     def _http_status_error(
         self,
@@ -312,7 +401,8 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
         message_dict = cast(dict[str, Any], message)
         content = message_dict.get("content")
         if isinstance(content, str):
-            return content
+            if content.strip():
+                return content
         if isinstance(content, list):
             parts: list[str] = []
             for item in cast(list[object], content):
@@ -323,7 +413,12 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
                 if isinstance(text, str):
                     parts.append(text)
             if parts:
-                return "".join(parts)
+                combined = "".join(parts)
+                if combined.strip():
+                    return combined
+        reasoning = message_dict.get("reasoning")
+        if isinstance(reasoning, str) and reasoning.strip():
+            return reasoning
         raise RuntimeError("LLM provider response content must be textual.")
 
 

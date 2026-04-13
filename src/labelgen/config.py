@@ -5,6 +5,7 @@ from typing import Literal
 
 ExtractorMode = Literal["spacy", "heuristic", "llm"]
 LLMProviderName = Literal["openai", "mistral", "qwen", "ollama"]
+LLMOutputContractMode = Literal["auto", "json_schema", "json_object", "prompt_only"]
 
 
 @dataclass(slots=True)
@@ -23,6 +24,9 @@ class LLMExtractionConfig:
         max_output_tokens: Maximum completion length per batch response.
         batch_size: Number of paragraphs sent in one provider request.
         max_concepts_per_paragraph: Hard cap for parsed concepts per paragraph.
+        output_contract_mode: Preferred provider output-contract mode. `auto`
+            tries stronger structured-output mechanisms before falling back to
+            prompt-only JSON instructions.
         cache_enabled: Whether to cache parsed paragraph concepts on disk.
         cache_dir: Cache directory for parsed LLM extraction outputs.
         record_extraction_artifacts: Write structured per-batch extraction
@@ -51,6 +55,7 @@ class LLMExtractionConfig:
     max_output_tokens: int = 512
     batch_size: int = 8
     max_concepts_per_paragraph: int = 12
+    output_contract_mode: LLMOutputContractMode = "auto"
     cache_enabled: bool = True
     cache_dir: str | None = ".labelgen-cache"
     record_extraction_artifacts: bool = False
