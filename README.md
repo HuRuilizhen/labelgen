@@ -80,6 +80,7 @@ unified around one OpenAI-compatible client and supports:
 - `openai`
 - `mistral`
 - `qwen`
+- `ollama`
 
 Configure the provider and model under `config.extraction.llm`:
 
@@ -100,6 +101,34 @@ Set the corresponding API key in the expected environment variable:
 - `OPENAI_API_KEY`
 - `MISTRAL_API_KEY`
 - `DASHSCOPE_API_KEY`
+- `OLLAMA_API_KEY` for authenticated or proxied Ollama deployments
+
+For local Ollama usage, the default base URL is:
+
+- `http://localhost:11434/v1`
+
+Local Ollama runs do not require an API key by default. When `provider="ollama"`,
+the client also disables reasoning by default to preserve output budget for the
+final JSON payload.
+
+## Output Contract Modes
+
+`config.extraction.llm.output_contract_mode` controls how aggressively the
+provider client tries to enforce a structured response:
+
+- `auto`: try stronger output contracts before falling back
+- `json_schema`: require JSON-schema structured output
+- `json_object`: require JSON-object mode
+- `prompt_only`: rely only on prompt instructions
+
+`auto` is the recommended default. For OpenAI-compatible providers, the client
+tries:
+
+- `json_schema`
+- then `json_object`
+- then `prompt_only`
+
+and only falls back when the provider clearly rejects the stronger contract.
 
 ## Structured Output And Reliability
 
@@ -108,8 +137,8 @@ configured endpoint supports OpenAI-compatible JSON schema response formatting.
 
 - prompt guidance is still used, but it is no longer the only output contract
 - structured output is enforced first when available
-- if an OpenAI-compatible endpoint rejects JSON-schema response formatting, the
-  client falls back to the prompt-only request on the same LLM path
+- if an OpenAI-compatible endpoint rejects a stronger contract, the client
+  degrades to a weaker output contract on the same LLM path
 - the extractor does not silently fall back to `spacy` or `heuristic`
 
 ## Recommended LLM Settings
@@ -122,6 +151,9 @@ For routine evaluation runs, prefer a conservative configuration:
 - `batch_size = 1` or a small batch size
 - `cache_enabled = True`
 - `record_extraction_artifacts = False`
+
+For local Ollama models, `batch_size = 1` is the safest default for benchmark
+and smoke-test runs.
 
 This keeps runs reproducible and avoids writing extra local artifacts unless you
 actually need them.
@@ -146,6 +178,30 @@ usage.
   text
 - artifacts are intended for local evaluation and debugging workflows, not as a
   default production feature
+
+## Benchmarking
+
+The repository includes a local benchmark harness for extractor comparisons:
+
+- `benchmark/run_benchmark.py`
+- `benchmark/summarize_results.py`
+
+Benchmark inputs are local development assets and should live under
+`experiment/`. The benchmark loader accepts:
+
+- `.jsonl`
+- `.json`
+
+Each record must provide:
+
+- `text`
+
+and may optionally provide:
+
+- `id`
+
+Benchmark code is for development evaluation only and is excluded from release
+artifacts.
 
 ## Optional Manual Smoke Test
 
@@ -189,3 +245,5 @@ Runnable examples are available in [`examples/`](examples/):
 - `use_graph_community_detection=False` uses deterministic connected components
 - the default spaCy path requires the configured spaCy model to be installed
 - the LLM path requires valid provider configuration and credentials
+- local Ollama usage does not require credentials unless your deployment is
+  explicitly authenticated
