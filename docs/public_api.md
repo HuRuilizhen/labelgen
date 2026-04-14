@@ -124,7 +124,7 @@ default model for the public spaCy pipeline.
 
 ### Provider And Request Settings
 
-- `provider`: one of `openai`, `mistral`, or `qwen`
+- `provider`: one of `openai`, `mistral`, `qwen`, or `ollama`
 - `model`: provider model name
 - `api_key_env_var`: optional environment variable override for the API key
 - `base_url`: optional provider base URL override
@@ -135,6 +135,19 @@ default model for the public spaCy pipeline.
 - `max_output_tokens`: maximum completion length per batch response
 - `batch_size`: paragraphs sent in one provider request
 - `max_concepts_per_paragraph`: post-parse concept cap per paragraph
+- `output_contract_mode`: one of `auto`, `json_schema`, `json_object`, or
+  `prompt_only`
+
+`output_contract_mode="auto"` is the recommended default. The provider layer
+prefers stronger structured-output contracts first and only falls back to
+weaker contracts when the provider clearly rejects the stronger option.
+
+For local Ollama usage:
+
+- the default base URL is `http://localhost:11434/v1`
+- API keys are optional
+- the provider client disables reasoning by default to preserve output budget
+  for the final JSON payload
 
 ### Cache And Artifact Settings
 
@@ -188,6 +201,31 @@ OPENAI_API_KEY=... .venv/bin/python examples/llm_extraction.py
 
 This is intended to verify provider connectivity and response parsing with real
 credentials, not to act as a deterministic regression test.
+
+## Benchmark Harness
+
+The repository includes a local benchmark harness for development evaluation:
+
+- `benchmark/run_benchmark.py`
+- `benchmark/summarize_results.py`
+
+Benchmark inputs are local files outside the distributed package. The runner
+accepts:
+
+- `.jsonl`
+- `.json`
+
+Each record must include:
+
+- `text`
+
+and may optionally include:
+
+- `id`
+
+Benchmark code is excluded from both the wheel and the source distribution. It
+is intended for local comparison workflows, not as part of the installed public
+runtime API.
 
 ## Result Models
 
