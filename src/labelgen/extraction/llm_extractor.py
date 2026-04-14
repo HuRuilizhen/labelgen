@@ -426,6 +426,9 @@ class LLMConceptExtractor(ConceptExtractor):
                     try:
                         decoded = json.loads(literal)
                     except json.JSONDecodeError:
+                        # Skip past the closing quote we just found so malformed
+                        # literals cannot trap the outer scanner on the same token.
+                        index = cursor + 1
                         break
                     if isinstance(decoded, str):
                         literals.append(decoded)
