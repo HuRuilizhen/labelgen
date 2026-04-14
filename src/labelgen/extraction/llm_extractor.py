@@ -267,6 +267,9 @@ class LLMConceptExtractor(ConceptExtractor):
             else:
                 start = content.find("{")
                 if start == -1:
+                    recovered = self._recover_single_paragraph_output(content)
+                    if recovered is not None:
+                        return recovered
                     raise RuntimeError(
                         "LLM extraction response did not contain valid JSON."
                     ) from None
@@ -275,7 +278,13 @@ class LLMConceptExtractor(ConceptExtractor):
                 if recovered is not None:
                     data = recovered
                 else:
-                    data, _ = decoder.raw_decode(content[start:])
+                    try:
+                        data, _ = decoder.raw_decode(content[start:])
+                    except json.JSONDecodeError:
+                        recovered = self._recover_single_paragraph_output(content)
+                        if recovered is not None:
+                            return recovered
+                        raise
         if not isinstance(data, dict):
             raise RuntimeError("LLM extraction response must decode to a JSON object.")
         return cast(dict[str, Any], data)
@@ -338,6 +347,96 @@ class LLMConceptExtractor(ConceptExtractor):
         if not isinstance(data, dict):
             return None
         return cast(dict[str, Any], data)
+
+    def _recover_single_paragraph_output(self, content: str) -> dict[str, Any] | None:
+        """Recover one-paragraph concept output from lightly malformed local-model JSON."""
+
+        paragraphs_index = content.find('"paragraphs"')
+        if paragraphs_index == -1:
+            return None
+        array_start = content.find("[", paragraphs_index)
+        if array_start == -1:
+            return None
+        inner_start = content.find("[", array_start + 1)
+        if inner_start == -1:
+            array_end = content.find("]", array_start + 1)
+            if array_end == -1:
+                return None
+            return {"paragraphs": [[]]}
+        inner_end = self._find_matching_bracket(content, inner_start)
+        if inner_end is None:
+            return None
+        inner_payload = content[inner_start + 1 : inner_end]
+        concepts = self._extract_string_literals(inner_payload)
+        return {"paragraphs": [concepts]}
+
+    def _find_matching_bracket(self, content: str, start_index: int) -> int | None:
+        """Find the matching closing bracket for one array literal."""
+
+        depth = 0
+        in_string = False
+        escape = False
+        for index in range(start_index, len(content)):
+            char = content[index]
+            if in_string:
+                if escape:
+                    escape = False
+                    continue
+                if char == "\\":
+                    escape = True
+                    continue
+                if char == '"':
+                    in_string = False
+                continue
+            if char == '"':
+                in_string = True
+                continue
+            if char == "[":
+                depth += 1
+                continue
+            if char == "]":
+                depth -= 1
+                if depth == 0:
+                    return index
+        return None
+
+    def _extract_string_literals(self, content: str) -> list[str]:
+        """Extract JSON-style string literals from a malformed list payload."""
+
+        literals: list[str] = []
+        index = 0
+        while index < len(content):
+            if content[index] != '"':
+                index += 1
+                continue
+            cursor = index + 1
+            escape = False
+            while cursor < len(content):
+                char = content[cursor]
+                if escape:
+                    escape = False
+                    cursor += 1
+                    continue
+                if char == "\\":
+                    escape = True
+                    cursor += 1
+                    continue
+                if char == '"':
+                    literal = content[index : cursor + 1]
+                    try:
+                        decoded = json.loads(literal)
+                    except json.JSONDecodeError:
+                        break
+                    if isinstance(decoded, str):
+                        literals.append(decoded)
+                    index = cursor + 1
+                    break
+                cursor += 1
+            else:
+                break
+            if cursor >= len(content):
+                break
+        return literals
 
     def _build_mentions(self, paragraph: Paragraph, concepts: list[str]) -> list[ConceptMention]:
         """Convert parsed concept text into mention models."""

@@ -86,6 +86,30 @@ def parse_args() -> argparse.Namespace:
         default=5,
         help="Number of sample paragraphs to retain in the output preview.",
     )
+    parser.add_argument(
+        "--record-artifacts",
+        action="store_true",
+        help="Record LLM extraction artifacts for debugging benchmark failures.",
+    )
+    parser.add_argument(
+        "--artifact-dir",
+        help="Artifact output directory when --record-artifacts is enabled.",
+    )
+    parser.add_argument(
+        "--record-raw-response-text",
+        action="store_true",
+        help="Include raw provider response text in recorded benchmark artifacts.",
+    )
+    parser.add_argument(
+        "--record-paragraph-text",
+        action="store_true",
+        help="Include paragraph text in recorded benchmark artifacts.",
+    )
+    parser.add_argument(
+        "--record-paragraph-metadata",
+        action="store_true",
+        help="Include paragraph metadata in recorded benchmark artifacts.",
+    )
     return parser.parse_args()
 
 
@@ -177,7 +201,12 @@ def build_config(args: argparse.Namespace) -> LabelGeneratorConfig:
         config.extraction.llm.max_output_tokens = args.max_output_tokens
         config.extraction.llm.timeout_seconds = args.timeout_seconds
         config.extraction.llm.max_concepts_per_paragraph = args.max_concepts_per_paragraph
-        config.extraction.llm.record_extraction_artifacts = False
+        config.extraction.llm.record_extraction_artifacts = args.record_artifacts
+        if args.artifact_dir is not None:
+            config.extraction.llm.artifact_dir = args.artifact_dir
+        config.extraction.llm.record_raw_response_text = args.record_raw_response_text
+        config.extraction.llm.record_paragraph_text = args.record_paragraph_text
+        config.extraction.llm.record_paragraph_metadata = args.record_paragraph_metadata
     return config
 
 

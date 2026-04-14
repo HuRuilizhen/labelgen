@@ -104,6 +104,11 @@ def test_summarize_run_reports_basic_benchmark_fields() -> None:
         max_output_tokens=512,
         timeout_seconds=30.0,
         max_concepts_per_paragraph=12,
+        record_artifacts=False,
+        artifact_dir=None,
+        record_raw_response_text=False,
+        record_paragraph_text=False,
+        record_paragraph_metadata=False,
     )
     summary = run_benchmark.summarize_run(
         args=args,
@@ -141,6 +146,11 @@ def test_summarize_run_builds_preview_from_cleaned_result_paragraphs() -> None:
         max_output_tokens=512,
         timeout_seconds=30.0,
         max_concepts_per_paragraph=12,
+        record_artifacts=False,
+        artifact_dir=None,
+        record_raw_response_text=False,
+        record_paragraph_text=False,
+        record_paragraph_metadata=False,
     )
     summary = run_benchmark.summarize_run(
         args=args,
@@ -203,6 +213,11 @@ def test_build_config_uses_conservative_default_batch_size_for_ollama() -> None:
         max_output_tokens=512,
         timeout_seconds=30.0,
         max_concepts_per_paragraph=12,
+        record_artifacts=False,
+        artifact_dir=None,
+        record_raw_response_text=False,
+        record_paragraph_text=False,
+        record_paragraph_metadata=False,
     )
 
     config = run_benchmark.build_config(args)
@@ -221,8 +236,40 @@ def test_build_config_keeps_default_cloud_batch_size() -> None:
         max_output_tokens=512,
         timeout_seconds=30.0,
         max_concepts_per_paragraph=12,
+        record_artifacts=False,
+        artifact_dir=None,
+        record_raw_response_text=False,
+        record_paragraph_text=False,
+        record_paragraph_metadata=False,
     )
 
     config = run_benchmark.build_config(args)
 
     assert config.extraction.llm.batch_size == 8
+
+
+def test_build_config_can_enable_benchmark_artifacts() -> None:
+    args = argparse.Namespace(
+        extractor="llm",
+        provider="ollama",
+        model="qwen3.5:4b",
+        output_contract_mode="auto",
+        sample_preview=2,
+        batch_size=None,
+        max_output_tokens=512,
+        timeout_seconds=30.0,
+        max_concepts_per_paragraph=12,
+        record_artifacts=True,
+        artifact_dir="experiment/artifacts/benchmark-ollama",
+        record_raw_response_text=True,
+        record_paragraph_text=True,
+        record_paragraph_metadata=True,
+    )
+
+    config = run_benchmark.build_config(args)
+
+    assert config.extraction.llm.record_extraction_artifacts is True
+    assert config.extraction.llm.artifact_dir == "experiment/artifacts/benchmark-ollama"
+    assert config.extraction.llm.record_raw_response_text is True
+    assert config.extraction.llm.record_paragraph_text is True
+    assert config.extraction.llm.record_paragraph_metadata is True

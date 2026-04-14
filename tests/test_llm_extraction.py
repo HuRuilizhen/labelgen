@@ -203,6 +203,23 @@ def test_llm_extractor_recovers_missing_closing_delimiters(tmp_path: Path) -> No
     assert mentions == []
 
 
+def test_llm_extractor_recovers_single_paragraph_strings_without_commas(
+    tmp_path: Path,
+) -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.model = "test-model"
+    config.extraction.llm.cache_dir = str(tmp_path)
+    client = FakeLLMProviderClient('{"paragraphs": [["OpenAI platform" "developer tooling"]]}')
+    extractor = LLMConceptExtractor(config.extraction, client=client)
+
+    mentions = extractor.extract([Paragraph(id="p1", text="OpenAI builds developer tooling.")])
+
+    assert [mention.normalized for mention in mentions] == [
+        "openai platform",
+        "developer tooling",
+    ]
+
+
 def test_llm_extractor_can_record_structured_artifacts(tmp_path: Path) -> None:
     config = LabelGeneratorConfig(extractor_mode="llm")
     config.extraction.llm.model = "test-model"
