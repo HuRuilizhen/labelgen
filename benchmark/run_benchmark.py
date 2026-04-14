@@ -52,8 +52,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=8,
-        help="LLM batch size when --extractor=llm.",
+        help=(
+            "LLM batch size when --extractor=llm. "
+            "Defaults to 8 for cloud providers and 1 for Ollama."
+        ),
     )
     parser.add_argument(
         "--max-output-tokens",
@@ -171,12 +173,22 @@ def build_config(args: argparse.Namespace) -> LabelGeneratorConfig:
         config.extraction.llm.provider = args.provider
         config.extraction.llm.model = args.model
         config.extraction.llm.output_contract_mode = args.output_contract_mode
-        config.extraction.llm.batch_size = args.batch_size
+        config.extraction.llm.batch_size = _resolve_llm_batch_size(args)
         config.extraction.llm.max_output_tokens = args.max_output_tokens
         config.extraction.llm.timeout_seconds = args.timeout_seconds
         config.extraction.llm.max_concepts_per_paragraph = args.max_concepts_per_paragraph
         config.extraction.llm.record_extraction_artifacts = False
     return config
+
+
+def _resolve_llm_batch_size(args: argparse.Namespace) -> int:
+    """Resolve a provider-aware benchmark batch size for one run."""
+
+    if args.batch_size is not None:
+        return args.batch_size
+    if args.provider == "ollama":
+        return 1
+    return 8
 
 
 def build_preview(

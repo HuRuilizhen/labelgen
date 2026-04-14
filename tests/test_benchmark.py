@@ -190,3 +190,39 @@ def test_summarize_results_and_markdown_render() -> None:
     assert summary["runs"][0]["run"] == "heuristic"
     assert summary["runs"][1]["run"] == "llm:ollama:qwen3.5:4b"
     assert "| heuristic | 10 | 20 | 30 | 1 | 2.00 | 3.00 |" in markdown
+
+
+def test_build_config_uses_conservative_default_batch_size_for_ollama() -> None:
+    args = argparse.Namespace(
+        extractor="llm",
+        provider="ollama",
+        model="qwen3.5:4b",
+        output_contract_mode="auto",
+        sample_preview=2,
+        batch_size=None,
+        max_output_tokens=512,
+        timeout_seconds=30.0,
+        max_concepts_per_paragraph=12,
+    )
+
+    config = run_benchmark.build_config(args)
+
+    assert config.extraction.llm.batch_size == 1
+
+
+def test_build_config_keeps_default_cloud_batch_size() -> None:
+    args = argparse.Namespace(
+        extractor="llm",
+        provider="mistral",
+        model="mistral-small",
+        output_contract_mode="auto",
+        sample_preview=2,
+        batch_size=None,
+        max_output_tokens=512,
+        timeout_seconds=30.0,
+        max_concepts_per_paragraph=12,
+    )
+
+    config = run_benchmark.build_config(args)
+
+    assert config.extraction.llm.batch_size == 8
