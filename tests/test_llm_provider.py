@@ -14,6 +14,7 @@ from labelgen.extraction.llm_provider import (
     LLMProviderRetryExhaustedError,
     LLMProviderTransportError,
     OpenAICompatibleProviderClient,
+    build_provider_client,
 )
 
 
@@ -196,6 +197,16 @@ def test_deepseek_provider_uses_official_defaults() -> None:
     assert client.last_url == "https://api.deepseek.com/v1/chat/completions"
     assert client.last_headers is not None
     assert client.last_headers["Authorization"] == "Bearer test-key"
+
+
+def test_build_provider_client_uses_deepseek_specialization() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "deepseek"
+    config.extraction.llm.model = "deepseek-chat"
+
+    client = build_provider_client(config.extraction.llm)
+
+    assert isinstance(client, DeepSeekProviderClient)
 
 
 class StructuredFallbackProviderClient(OpenAICompatibleProviderClient):
@@ -469,6 +480,25 @@ def test_openai_compatible_provider_raises_configuration_error_for_missing_api_k
     except LLMProviderConfigurationError as error:
         assert error.provider == "openai"
         assert "LABELGEN_TEST_MISSING_KEY" in str(error)
+    else:
+        raise AssertionError("Expected a configuration error for a missing API key.")
+
+
+def test_deepseek_provider_uses_default_api_key_env_var() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "deepseek"
+    config.extraction.llm.model = "deepseek-chat"
+    config.extraction.llm.api_key_env_var = None
+    client = DeepSeekProviderClient()
+
+    try:
+        client.complete_chat(
+            messages=[{"role": "user", "content": "Extract concepts."}],
+            config=config.extraction.llm,
+        )
+    except LLMProviderConfigurationError as error:
+        assert error.provider == "deepseek"
+        assert "DEEPSEEK_API_KEY" in str(error)
     else:
         raise AssertionError("Expected a configuration error for a missing API key.")
 
