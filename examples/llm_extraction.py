@@ -1,6 +1,6 @@
 """LLM-backed concept extraction example.
 
-This example uses the v0.2.0 LLM extractor path. Configure the provider and
+This example uses the provider-backed LLM extractor path. Configure the provider and
 model through environment variables before running it.
 
 Example:
@@ -13,6 +13,11 @@ Example:
     export LABELGEN_LLM_PROVIDER=ollama
     export LABELGEN_LLM_MODEL=llama3.1
     export LABELGEN_LLM_BASE_URL=http://localhost:11434/v1
+    python examples/llm_extraction.py
+
+    export LABELGEN_LLM_PROVIDER=deepseek
+    export LABELGEN_LLM_MODEL=deepseek-chat
+    export DEEPSEEK_API_KEY=...
     python examples/llm_extraction.py
 """
 

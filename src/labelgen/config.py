@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 ExtractorMode = Literal["spacy", "heuristic", "llm"]
-LLMProviderName = Literal["openai", "mistral", "qwen", "ollama"]
+LLMProviderName = Literal["openai", "mistral", "qwen", "ollama", "deepseek"]
 LLMOutputContractMode = Literal["auto", "json_schema", "json_object", "prompt_only"]
 
 

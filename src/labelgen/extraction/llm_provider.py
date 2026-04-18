@@ -17,12 +17,14 @@ _DEFAULT_BASE_URLS: dict[LLMProviderName, str] = {
     "mistral": "https://api.mistral.ai/v1",
     "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "ollama": "http://localhost:11434/v1",
+    "deepseek": "https://api.deepseek.com/v1",
 }
 _DEFAULT_API_KEY_ENV_VARS: dict[LLMProviderName, str] = {
     "openai": "OPENAI_API_KEY",
     "mistral": "MISTRAL_API_KEY",
     "qwen": "DASHSCOPE_API_KEY",
     "ollama": "OLLAMA_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
 }
 
 
@@ -445,6 +447,6 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
 def build_provider_client(config: LLMExtractionConfig) -> LLMProviderClient:
     """Build the provider client for the configured provider."""
 
-    if config.provider in {"openai", "mistral", "qwen", "ollama"}:
+    if config.provider in {"openai", "mistral", "qwen", "ollama", "deepseek"}:
         return OpenAICompatibleProviderClient()
     raise RuntimeError(f"Unsupported LLM provider '{config.provider}'.")

@@ -149,6 +149,23 @@ def test_openai_compatible_provider_can_use_prompt_only_mode() -> None:
     assert "response_format" not in client.last_payload
 
 
+def test_deepseek_provider_uses_official_defaults() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "deepseek"
+    config.extraction.llm.model = "deepseek-chat"
+    client = RecordingProviderClient()
+
+    content = client.complete_chat(
+        messages=[{"role": "user", "content": "Extract concepts."}],
+        config=config.extraction.llm,
+    )
+
+    assert content == '{"paragraphs": [["OpenAI platform"]]}'
+    assert client.last_url == "https://api.deepseek.com/v1/chat/completions"
+    assert client.last_headers is not None
+    assert client.last_headers["Authorization"] == "Bearer test-key"
+
+
 class StructuredFallbackProviderClient(OpenAICompatibleProviderClient):
     """Provider client that rejects structured output once, then accepts prompt-only."""
 
