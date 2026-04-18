@@ -124,7 +124,7 @@ default model for the public spaCy pipeline.
 
 ### Provider And Request Settings
 
-- `provider`: one of `openai`, `mistral`, `qwen`, or `ollama`
+- `provider`: one of `openai`, `mistral`, `qwen`, `ollama`, or `deepseek`
 - `model`: provider model name
 - `api_key_env_var`: optional environment variable override for the API key
 - `base_url`: optional provider base URL override
@@ -141,6 +141,13 @@ default model for the public spaCy pipeline.
 `output_contract_mode="auto"` is the recommended default. The provider layer
 prefers stronger structured-output contracts first and only falls back to
 weaker contracts when the provider clearly rejects the stronger option.
+
+For DeepSeek:
+
+- the default base URL is `https://api.deepseek.com/v1`
+- the default API key environment variable is `DEEPSEEK_API_KEY`
+- `output_contract_mode="auto"` prefers `json_object` first, then
+  `prompt_only`
 
 For local Ollama usage:
 
@@ -226,6 +233,14 @@ and may optionally include:
 Benchmark code is excluded from both the wheel and the source distribution. It
 is intended for local comparison workflows, not as part of the installed public
 runtime API.
+
+The current local benchmark workflow is used to compare:
+
+- `heuristic`
+- `spacy`
+- `llm:ollama`
+- `llm:mistral`
+- `llm:deepseek`
 
 ## Result Models
 
