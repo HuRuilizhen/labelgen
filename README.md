@@ -81,6 +81,7 @@ unified around one OpenAI-compatible client and supports:
 - `mistral`
 - `qwen`
 - `ollama`
+- `deepseek`
 
 Configure the provider and model under `config.extraction.llm`:
 
@@ -101,6 +102,7 @@ Set the corresponding API key in the expected environment variable:
 - `OPENAI_API_KEY`
 - `MISTRAL_API_KEY`
 - `DASHSCOPE_API_KEY`
+- `DEEPSEEK_API_KEY`
 - `OLLAMA_API_KEY` for authenticated or proxied Ollama deployments
 
 For local Ollama usage, the default base URL is:
@@ -129,6 +131,12 @@ tries:
 - then `prompt_only`
 
 and only falls back when the provider clearly rejects the stronger contract.
+
+DeepSeek follows a narrower `auto` sequence based on the official API
+documentation:
+
+- `json_object`
+- then `prompt_only`
 
 ## Structured Output And Reliability
 
@@ -202,6 +210,14 @@ and may optionally provide:
 
 Benchmark code is for development evaluation only and is excluded from release
 artifacts.
+
+The current TechQA benchmark comparisons include:
+
+- `heuristic`
+- `spacy`
+- `llm:ollama`
+- `llm:mistral`
+- `llm:deepseek`
 
 ## Optional Manual Smoke Test
 
