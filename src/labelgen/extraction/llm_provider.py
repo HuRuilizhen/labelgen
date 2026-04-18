@@ -26,6 +26,9 @@ _DEFAULT_API_KEY_ENV_VARS: dict[LLMProviderName, str] = {
     "ollama": "OLLAMA_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
 }
+_OPENAI_COMPATIBLE_PROVIDERS: frozenset[LLMProviderName] = frozenset(_DEFAULT_BASE_URLS)
+_OPTIONAL_AUTH_PROVIDERS: frozenset[LLMProviderName] = frozenset({"ollama"})
+_JSON_OBJECT_AUTO_PROVIDERS: frozenset[LLMProviderName] = frozenset({"deepseek"})
 
 
 class LLMProviderError(RuntimeError):
@@ -224,7 +227,7 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
             "temperature": config.temperature,
             "max_tokens": config.max_output_tokens,
         }
-        if config.provider == "ollama":
+        if config.provider in _OPTIONAL_AUTH_PROVIDERS:
             # Local reasoning-capable models often spend the output budget on
             # thinking traces unless reasoning is disabled explicitly.
             payload["reasoning_effort"] = "none"
@@ -260,7 +263,7 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
     ) -> bool:
         """Return whether auto mode should skip json_schema."""
 
-        return provider == "deepseek"
+        return provider in _JSON_OBJECT_AUTO_PROVIDERS
 
     def _response_format_for_contract(
         self,
@@ -377,7 +380,7 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
 
         env_var = config.api_key_env_var or _DEFAULT_API_KEY_ENV_VARS[config.provider]
         api_key = os.environ.get(env_var)
-        if config.provider == "ollama":
+        if config.provider in _OPTIONAL_AUTH_PROVIDERS:
             return api_key or ""
         if not api_key:
             raise LLMProviderConfigurationError(
@@ -459,6 +462,6 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
 def build_provider_client(config: LLMExtractionConfig) -> LLMProviderClient:
     """Build the provider client for the configured provider."""
 
-    if config.provider in {"openai", "mistral", "qwen", "ollama", "deepseek"}:
+    if config.provider in _OPENAI_COMPATIBLE_PROVIDERS:
         return OpenAICompatibleProviderClient()
     raise RuntimeError(f"Unsupported LLM provider '{config.provider}'.")
