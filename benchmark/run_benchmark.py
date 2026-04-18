@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--provider",
-        choices=("openai", "mistral", "qwen", "ollama"),
+        choices=("openai", "mistral", "qwen", "ollama", "deepseek"),
         help="LLM provider when --extractor=llm.",
     )
     parser.add_argument("--model", help="LLM model name when --extractor=llm.")
