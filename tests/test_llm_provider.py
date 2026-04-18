@@ -8,6 +8,7 @@ from urllib.error import HTTPError, URLError
 
 from labelgen import LabelGeneratorConfig
 from labelgen.extraction.llm_provider import (
+    DeepSeekProviderClient,
     LLMProviderConfigurationError,
     LLMProviderHTTPStatusError,
     LLMProviderRetryExhaustedError,
@@ -70,6 +71,37 @@ class OptionalAuthRecordingProviderClient(OpenAICompatibleProviderClient):
         del timeout
         self.last_url = url
         self.last_headers = headers
+        self.last_payload = payload
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"paragraphs": [["OpenAI platform"]]}'
+                    }
+                }
+            ]
+        }
+
+
+class RecordingDeepSeekProviderClient(DeepSeekProviderClient):
+    """DeepSeek-specialized recording client for contract-sequence tests."""
+
+    def __init__(self) -> None:
+        self.last_payload: dict[str, Any] | None = None
+
+    def _resolve_api_key(self, config: object) -> str:
+        del config
+        return "test-key"
+
+    def _post_json(
+        self,
+        url: str,
+        headers: dict[str, str],
+        payload: dict[str, Any],
+        *,
+        timeout: float,
+    ) -> dict[str, Any]:
+        del url, headers, timeout
         self.last_payload = payload
         return {
             "choices": [
@@ -298,6 +330,29 @@ def test_openai_compatible_provider_stops_auto_fallback_at_json_object() -> None
     assert content == '{"paragraphs": [["OpenAI platform"]]}'
     assert len(client.payloads) == 2
     assert client.payloads[1]["response_format"] == {"type": "json_object"}
+
+
+def test_deepseek_provider_prefers_json_object_in_auto_mode() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "deepseek"
+    config.extraction.llm.model = "deepseek-chat"
+    client = RecordingDeepSeekProviderClient()
+    schema = {
+        "type": "object",
+        "properties": {"paragraphs": {"type": "array"}},
+        "required": ["paragraphs"],
+        "additionalProperties": False,
+    }
+
+    content = client.complete_chat(
+        messages=[{"role": "user", "content": "Extract concepts."}],
+        config=config.extraction.llm,
+        response_schema=schema,
+    )
+
+    assert content == '{"paragraphs": [["OpenAI platform"]]}'
+    assert client.last_payload is not None
+    assert client.last_payload["response_format"] == {"type": "json_object"}
 
 
 class EmptyContentFallbackProviderClient(OpenAICompatibleProviderClient):
