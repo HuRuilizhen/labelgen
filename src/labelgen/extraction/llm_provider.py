@@ -17,13 +17,18 @@ _DEFAULT_BASE_URLS: dict[LLMProviderName, str] = {
     "mistral": "https://api.mistral.ai/v1",
     "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "ollama": "http://localhost:11434/v1",
+    "deepseek": "https://api.deepseek.com/v1",
 }
 _DEFAULT_API_KEY_ENV_VARS: dict[LLMProviderName, str] = {
     "openai": "OPENAI_API_KEY",
     "mistral": "MISTRAL_API_KEY",
     "qwen": "DASHSCOPE_API_KEY",
     "ollama": "OLLAMA_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
 }
+_OPENAI_COMPATIBLE_PROVIDERS: frozenset[LLMProviderName] = frozenset(_DEFAULT_BASE_URLS)
+_OPTIONAL_AUTH_PROVIDERS: frozenset[LLMProviderName] = frozenset({"ollama"})
+_JSON_OBJECT_AUTO_PROVIDERS: frozenset[LLMProviderName] = frozenset({"deepseek"})
 
 
 class LLMProviderError(RuntimeError):
@@ -115,6 +120,7 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
         last_error: Exception | None = None
         for contract_mode in self._resolve_contract_sequence(
             config.output_contract_mode,
+            provider=config.provider,
             response_schema=response_schema,
         ):
             for attempt in range(config.max_retries + 1):
@@ -221,7 +227,7 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
             "temperature": config.temperature,
             "max_tokens": config.max_output_tokens,
         }
-        if config.provider == "ollama":
+        if config.provider in _OPTIONAL_AUTH_PROVIDERS:
             # Local reasoning-capable models often spend the output budget on
             # thinking traces unless reasoning is disabled explicitly.
             payload["reasoning_effort"] = "none"
@@ -238,6 +244,7 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
         self,
         configured_mode: LLMOutputContractMode,
         *,
+        provider: LLMProviderName,
         response_schema: dict[str, Any] | None,
     ) -> list[LLMOutputContractMode]:
         """Return the ordered output-contract modes to try for one request."""
@@ -245,8 +252,18 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
         if configured_mode == "auto":
             if response_schema is None:
                 return ["prompt_only"]
+            if self._prefers_json_object_auto_sequence(provider):
+                return ["json_object", "prompt_only"]
             return ["json_schema", "json_object", "prompt_only"]
         return [configured_mode]
+
+    def _prefers_json_object_auto_sequence(
+        self,
+        provider: LLMProviderName,
+    ) -> bool:
+        """Return whether auto mode should skip json_schema."""
+
+        return provider in _JSON_OBJECT_AUTO_PROVIDERS
 
     def _response_format_for_contract(
         self,
@@ -363,7 +380,7 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
 
         env_var = config.api_key_env_var or _DEFAULT_API_KEY_ENV_VARS[config.provider]
         api_key = os.environ.get(env_var)
-        if config.provider == "ollama":
+        if config.provider in _OPTIONAL_AUTH_PROVIDERS:
             return api_key or ""
         if not api_key:
             raise LLMProviderConfigurationError(
@@ -445,6 +462,6 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
 def build_provider_client(config: LLMExtractionConfig) -> LLMProviderClient:
     """Build the provider client for the configured provider."""
 
-    if config.provider in {"openai", "mistral", "qwen", "ollama"}:
+    if config.provider in _OPENAI_COMPATIBLE_PROVIDERS:
         return OpenAICompatibleProviderClient()
     raise RuntimeError(f"Unsupported LLM provider '{config.provider}'.")

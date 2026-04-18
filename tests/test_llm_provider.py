@@ -13,6 +13,7 @@ from labelgen.extraction.llm_provider import (
     LLMProviderRetryExhaustedError,
     LLMProviderTransportError,
     OpenAICompatibleProviderClient,
+    build_provider_client,
 )
 
 
@@ -149,6 +150,33 @@ def test_openai_compatible_provider_can_use_prompt_only_mode() -> None:
     assert "response_format" not in client.last_payload
 
 
+def test_deepseek_provider_uses_official_defaults() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "deepseek"
+    config.extraction.llm.model = "deepseek-chat"
+    client = RecordingProviderClient()
+
+    content = client.complete_chat(
+        messages=[{"role": "user", "content": "Extract concepts."}],
+        config=config.extraction.llm,
+    )
+
+    assert content == '{"paragraphs": [["OpenAI platform"]]}'
+    assert client.last_url == "https://api.deepseek.com/v1/chat/completions"
+    assert client.last_headers is not None
+    assert client.last_headers["Authorization"] == "Bearer test-key"
+
+
+def test_build_provider_client_uses_deepseek_specialization() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "deepseek"
+    config.extraction.llm.model = "deepseek-chat"
+
+    client = build_provider_client(config.extraction.llm)
+
+    assert isinstance(client, OpenAICompatibleProviderClient)
+
+
 class StructuredFallbackProviderClient(OpenAICompatibleProviderClient):
     """Provider client that rejects structured output once, then accepts prompt-only."""
 
@@ -283,6 +311,29 @@ def test_openai_compatible_provider_stops_auto_fallback_at_json_object() -> None
     assert client.payloads[1]["response_format"] == {"type": "json_object"}
 
 
+def test_deepseek_provider_prefers_json_object_in_auto_mode() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "deepseek"
+    config.extraction.llm.model = "deepseek-chat"
+    client = RecordingProviderClient()
+    schema = {
+        "type": "object",
+        "properties": {"paragraphs": {"type": "array"}},
+        "required": ["paragraphs"],
+        "additionalProperties": False,
+    }
+
+    content = client.complete_chat(
+        messages=[{"role": "user", "content": "Extract concepts."}],
+        config=config.extraction.llm,
+        response_schema=schema,
+    )
+
+    assert content == '{"paragraphs": [["OpenAI platform"]]}'
+    assert client.last_payload is not None
+    assert client.last_payload["response_format"] == {"type": "json_object"}
+
+
 class EmptyContentFallbackProviderClient(OpenAICompatibleProviderClient):
     """Provider client that returns empty content until prompt-only mode is used."""
 
@@ -397,6 +448,25 @@ def test_openai_compatible_provider_raises_configuration_error_for_missing_api_k
     except LLMProviderConfigurationError as error:
         assert error.provider == "openai"
         assert "LABELGEN_TEST_MISSING_KEY" in str(error)
+    else:
+        raise AssertionError("Expected a configuration error for a missing API key.")
+
+
+def test_deepseek_provider_uses_default_api_key_env_var() -> None:
+    config = LabelGeneratorConfig(extractor_mode="llm")
+    config.extraction.llm.provider = "deepseek"
+    config.extraction.llm.model = "deepseek-chat"
+    config.extraction.llm.api_key_env_var = None
+    client = OpenAICompatibleProviderClient()
+
+    try:
+        client.complete_chat(
+            messages=[{"role": "user", "content": "Extract concepts."}],
+            config=config.extraction.llm,
+        )
+    except LLMProviderConfigurationError as error:
+        assert error.provider == "deepseek"
+        assert "DEEPSEEK_API_KEY" in str(error)
     else:
         raise AssertionError("Expected a configuration error for a missing API key.")
 
