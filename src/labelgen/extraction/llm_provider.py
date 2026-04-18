@@ -117,6 +117,7 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
         last_error: Exception | None = None
         for contract_mode in self._resolve_contract_sequence(
             config.output_contract_mode,
+            provider=config.provider,
             response_schema=response_schema,
         ):
             for attempt in range(config.max_retries + 1):
@@ -240,6 +241,7 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
         self,
         configured_mode: LLMOutputContractMode,
         *,
+        provider: LLMProviderName,
         response_schema: dict[str, Any] | None,
     ) -> list[LLMOutputContractMode]:
         """Return the ordered output-contract modes to try for one request."""
@@ -247,19 +249,18 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
         if configured_mode == "auto":
             if response_schema is None:
                 return ["prompt_only"]
-            if self._prefers_json_object_auto_sequence(configured_mode):
+            if self._prefers_json_object_auto_sequence(provider):
                 return ["json_object", "prompt_only"]
             return ["json_schema", "json_object", "prompt_only"]
         return [configured_mode]
 
     def _prefers_json_object_auto_sequence(
         self,
-        configured_mode: LLMOutputContractMode,
+        provider: LLMProviderName,
     ) -> bool:
         """Return whether auto mode should skip json_schema."""
 
-        del configured_mode
-        return False
+        return provider == "deepseek"
 
     def _response_format_for_contract(
         self,
@@ -458,21 +459,6 @@ class OpenAICompatibleProviderClient(LLMProviderClient):
 def build_provider_client(config: LLMExtractionConfig) -> LLMProviderClient:
     """Build the provider client for the configured provider."""
 
-    if config.provider in {"openai", "mistral", "qwen", "ollama"}:
+    if config.provider in {"openai", "mistral", "qwen", "ollama", "deepseek"}:
         return OpenAICompatibleProviderClient()
-    if config.provider == "deepseek":
-        return DeepSeekProviderClient()
     raise RuntimeError(f"Unsupported LLM provider '{config.provider}'.")
-
-
-class DeepSeekProviderClient(OpenAICompatibleProviderClient):
-    """OpenAI-compatible client with DeepSeek-specific output-contract defaults."""
-
-    def _prefers_json_object_auto_sequence(
-        self,
-        configured_mode: LLMOutputContractMode,
-    ) -> bool:
-        """DeepSeek documents json_object output, not json_schema output."""
-
-        del configured_mode
-        return True

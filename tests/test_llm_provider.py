@@ -8,7 +8,6 @@ from urllib.error import HTTPError, URLError
 
 from labelgen import LabelGeneratorConfig
 from labelgen.extraction.llm_provider import (
-    DeepSeekProviderClient,
     LLMProviderConfigurationError,
     LLMProviderHTTPStatusError,
     LLMProviderRetryExhaustedError,
@@ -72,37 +71,6 @@ class OptionalAuthRecordingProviderClient(OpenAICompatibleProviderClient):
         del timeout
         self.last_url = url
         self.last_headers = headers
-        self.last_payload = payload
-        return {
-            "choices": [
-                {
-                    "message": {
-                        "content": '{"paragraphs": [["OpenAI platform"]]}'
-                    }
-                }
-            ]
-        }
-
-
-class RecordingDeepSeekProviderClient(DeepSeekProviderClient):
-    """DeepSeek-specialized recording client for contract-sequence tests."""
-
-    def __init__(self) -> None:
-        self.last_payload: dict[str, Any] | None = None
-
-    def _resolve_api_key(self, config: object) -> str:
-        del config
-        return "test-key"
-
-    def _post_json(
-        self,
-        url: str,
-        headers: dict[str, str],
-        payload: dict[str, Any],
-        *,
-        timeout: float,
-    ) -> dict[str, Any]:
-        del url, headers, timeout
         self.last_payload = payload
         return {
             "choices": [
@@ -206,7 +174,7 @@ def test_build_provider_client_uses_deepseek_specialization() -> None:
 
     client = build_provider_client(config.extraction.llm)
 
-    assert isinstance(client, DeepSeekProviderClient)
+    assert isinstance(client, OpenAICompatibleProviderClient)
 
 
 class StructuredFallbackProviderClient(OpenAICompatibleProviderClient):
@@ -347,7 +315,7 @@ def test_deepseek_provider_prefers_json_object_in_auto_mode() -> None:
     config = LabelGeneratorConfig(extractor_mode="llm")
     config.extraction.llm.provider = "deepseek"
     config.extraction.llm.model = "deepseek-chat"
-    client = RecordingDeepSeekProviderClient()
+    client = RecordingProviderClient()
     schema = {
         "type": "object",
         "properties": {"paragraphs": {"type": "array"}},
@@ -489,7 +457,7 @@ def test_deepseek_provider_uses_default_api_key_env_var() -> None:
     config.extraction.llm.provider = "deepseek"
     config.extraction.llm.model = "deepseek-chat"
     config.extraction.llm.api_key_env_var = None
-    client = DeepSeekProviderClient()
+    client = OpenAICompatibleProviderClient()
 
     try:
         client.complete_chat(
